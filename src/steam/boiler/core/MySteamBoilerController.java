@@ -30,6 +30,17 @@ public class MySteamBoilerController implements SteamBoilerController {
    * Identifies the current mode in which the controller is operating.
    */
   private State mode = State.WAITING;
+  
+  /**
+   * The target level we want the boiler to be
+   * Calculated in the middle of the 2 normal level values
+   */
+  private final double target;
+  
+  /**
+   * To keep track of whether the valve is currently open
+   */
+  private boolean valveOpen = false;
 
   /**
    * Construct a steam boiler controller for a given set of characteristics.
@@ -39,6 +50,7 @@ public class MySteamBoilerController implements SteamBoilerController {
    */
   public MySteamBoilerController(SteamBoilerCharacteristics configuration) {
     this.configuration = configuration;
+    target = (configuration.getMaximalNormalLevel() + configuration.getMinimalNormalLevel()) / 2.0;
   }
 
 	/**
@@ -78,11 +90,75 @@ public class MySteamBoilerController implements SteamBoilerController {
 		//
 
 		// FIXME: this is where the main implementation stems from
-
+		switch(mode) {
+		case WAITING:
+			doWaiting(incoming, outgoing);
+			outgoing.send(new Message(MessageKind.MODE_m, Mailbox.Mode.INITIALISATION));
+		case READY:
+			doReady(incoming, outgoing);
+			
+		
+		}
 		// NOTE: this is an example message send to illustrate the syntax
-		outgoing.send(new Message(MessageKind.MODE_m, Mailbox.Mode.INITIALISATION));
+		//outgoing.send(new Message(MessageKind.MODE_m, Mailbox.Mode.INITIALISATION));
+	}
+	
+	public void doReady(Mailbox incoming, Mailbox outgoing) {
+		if(extractAllMatches(MessageKind.PHYSICAL_UNITS_READY, incoming).length == 1) {
+			mode = State.NORMAL;
+			outgoing.send(new Message(MessageKind.MODE_m, Mailbox.Mode.NORMAL));
+		}
+	}
+	
+	public boolean doWaiting(Mailbox incoming, Mailbox outgoing) {
+		
+		if(extractAllMatches(MessageKind.STEAM_BOILER_WAITING, incoming).length != 1) {
+			return false;
+		} 
+		
+		Message levelMessage = extractOnlyMatch(MessageKind.LEVEL_v, incoming);
+		Message steamMessage = extractOnlyMatch(MessageKind.STEAM_v, incoming);
+		if(levelMessage == null || steamMessage == null) {
+			this.mode = State.EMERGENCY_STOP;
+			return false;
+		} else if(steamMessage.getDoubleParameter() != 0){
+			this.mode = State.EMERGENCY_STOP;
+			return false;
+		} else if(levelMessage.getDoubleParameter() < 0 || levelMessage.getDoubleParameter() >= configuration.getCapacity()) { 
+			System.out.println("sensor broken");
+			this.mode = State.EMERGENCY_STOP;
+			return false;
+		} else if(levelMessage.getDoubleParameter() > configuration.getMaximalNormalLevel()
+				|| levelMessage.getDoubleParameter() < configuration.getMinimalNormalLevel()) {
+			hitInitialTarget(levelMessage.getDoubleParameter(), outgoing);
+		} else {
+			outgoing.send(new Message(MessageKind.PROGRAM_READY));
+			this.mode = State.READY;
+		}
+		return true;
+		
 	}
 
+	public void hitInitialTarget(double level, Mailbox outgoing) {
+		if(level > configuration.getMaximalNormalLevel() && !valveOpen) {
+			outgoing.send(new Message(MessageKind.VALVE));
+			valveOpen = true;
+		} else if(level < configuration.getMinimalNormalLevel()) {
+			outgoing.send(new Message(MessageKind.OPEN_PUMP_n, 0));
+			if(valveOpen) {
+				outgoing.send(new Message(MessageKind.VALVE));
+				valveOpen = false;
+			}
+		} else {
+			outgoing.send(new Message(MessageKind.CLOSE_PUMP_n, 0));
+			if(valveOpen) {
+				outgoing.send(new Message(MessageKind.VALVE));
+				valveOpen = true;
+			}
+		}
+	}
+	
+	
 	/**
 	 * Check whether there was a transmission failure. This is indicated in several
 	 * ways. Firstly, when one of the required messages is missing. Secondly, when
