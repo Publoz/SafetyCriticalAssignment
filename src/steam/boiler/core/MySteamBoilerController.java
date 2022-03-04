@@ -157,6 +157,7 @@ public class MySteamBoilerController implements SteamBoilerController {
 				bestDist = Math.abs(((max + min) / 2) - target);
 			}
 		}
+
 		return bestNum;
 	}
 	
@@ -186,8 +187,14 @@ public class MySteamBoilerController implements SteamBoilerController {
 				|| levelMessage.getDoubleParameter() < configuration.getMinimalNormalLevel()) {
 			hitInitialTarget(levelMessage, steamMessage, outgoing);
 		} else {
+			closeAllPumps(outgoing);
+			if(valveOpen) {
+				outgoing.send(new Message(MessageKind.VALVE));
+				valveOpen = false;
+			}
 			outgoing.send(new Message(MessageKind.PROGRAM_READY));
 			this.mode = State.READY;
+			
 		}
 		
 	}
@@ -196,24 +203,48 @@ public class MySteamBoilerController implements SteamBoilerController {
 		this.mode = State.EMERGENCY_STOP;
 		outgoing.send(new Message(MessageKind.MODE_m, Mailbox.Mode.EMERGENCY_STOP));
 	}
+	
+	private void initialFill(Message levelMessage, Mailbox outgoing) {
+		int best = 1;
+		double dist = 9999;
+		
+		
+		for(int i = 1; i <= configuration.getNumberOfPumps(); i++) {
+			double level = levelMessage.getDoubleParameter() + (5 * configuration.getPumpCapacity(0) * i);
+			if(Math.abs(level - target) < dist) {
+				best = i;
+				dist = Math.abs(level - target);
+			}
+		}
+		
+		for(int i = 0; i < configuration.getNumberOfPumps(); i++) {
+			if(i < best) {
+				outgoing.send(new Message(MessageKind.OPEN_PUMP_n, i));
+			} else {
+				outgoing.send(new Message(MessageKind.CLOSE_PUMP_n, i));
+			}
+		}
+		
+	}
+	
+	private void closeAllPumps(Mailbox outgoing) {
+		for(int i = 0; i < configuration.getNumberOfPumps(); i++) {
+			outgoing.send(new Message(MessageKind.CLOSE_PUMP_n, i));
+		}
+	}
 
 	private void hitInitialTarget(Message level, Message steam, Mailbox outgoing) {
 		if(level.getDoubleParameter() > configuration.getMaximalNormalLevel() && !valveOpen) {
 			outgoing.send(new Message(MessageKind.VALVE));
 			valveOpen = true;
 		} else if(level.getDoubleParameter() < configuration.getMinimalNormalLevel()) {
-			turnOnPumps(calcPumps(level, steam), outgoing);
+			//turnOnPumps(calcPumps(level, steam), outgoing);
+			initialFill(level, outgoing);
 			if(valveOpen) {
 				outgoing.send(new Message(MessageKind.VALVE));
 				valveOpen = false;
 			}
-		} else {
-			outgoing.send(new Message(MessageKind.CLOSE_PUMP_n, 0));
-			if(valveOpen) {
-				outgoing.send(new Message(MessageKind.VALVE));
-				valveOpen = true;
-			}
-		}
+		} 
 	}
 	
 	
