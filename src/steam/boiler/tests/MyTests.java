@@ -28,6 +28,7 @@ import steam.boiler.model.PhysicalUnits;
 import steam.boiler.model.PumpControllerModels;
 import steam.boiler.model.PumpModels;
 import steam.boiler.model.SteamSensorModels;
+import steam.boiler.util.Mailbox.Mode;
 import steam.boiler.util.SteamBoilerCharacteristics;
 
 
@@ -84,6 +85,52 @@ public class MyTests {
 		      fail("Water level below limit minimum (after " + time + "s with " + numberOfPumps
 		          + " pumps)");
 		    }
+		  }
+	  
+	
+	  /**
+	   * Check when a pump starts working at half, we notice
+	   */
+	  @Test
+	  public void test_pumpsWorkinghalf() {
+	    SteamBoilerCharacteristics config = SteamBoilerCharacteristics.DEFAULT;
+	    MySteamBoilerController controller = new MySteamBoilerController(config);
+	    PhysicalUnits model = new PhysicalUnits.Template(config).construct();
+	    // Wait at most 60s for controller to get to READY state
+	    model.setMode(PhysicalUnits.Mode.WAITING);
+	    clockUntil(60, controller, model, atleast(PROGRAM_READY));
+	    // At this point, level should be within normal bounds
+	    assertTrue(model.getBoiler().getWaterLevel() <= config.getMaximalNormalLevel());
+	    assertTrue(model.getBoiler().getWaterLevel() >= config.getMinimalNormalLevel());
+	    
+	    model.setPump(0, new PumpModels.ReducedHalf(0, config.getPumpCapacity(0)/2, model));
+	   
+	    clockUntil(60, controller, model, atleast(MODE_degraded));
+	    
+	  }
+	  
+	  
+	  @Test
+	  public void test_pumpClosed() {
+		    SteamBoilerCharacteristics config = SteamBoilerCharacteristics.DEFAULT;
+		    MySteamBoilerController controller = new MySteamBoilerController(config);
+		    PhysicalUnits model = new PhysicalUnits.Template(config).construct();
+		    // Wait at most 60s for controller to get to READY state
+		    model.setMode(PhysicalUnits.Mode.WAITING);
+		    clockUntil(60, controller, model, atleast(PROGRAM_READY));
+		    // At this point, level should be within normal bounds
+		    assertTrue(model.getBoiler().getWaterLevel() <= config.getMaximalNormalLevel());
+		    assertTrue(model.getBoiler().getWaterLevel() >= config.getMinimalNormalLevel());
+		    
+		    model.setPump(0, new PumpModels.StuckClosed(0, 0.0, model));
+		    
+		    clockUntil(60, controller, model, atleast(MODE_degraded));
+		    
+		    model.setPump(0, new PumpModels.Ideal(0, config.getPumpCapacity(0), model));
+		    model.setPumpStatus(0, PhysicalUnits.ComponentStatus.REPAIRED);
+		    
+		    clockUntil(60, controller, model, atleast(MODE_normal));
+		    
 		  }
 
 	
