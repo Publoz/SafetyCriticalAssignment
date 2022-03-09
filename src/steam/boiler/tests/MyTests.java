@@ -129,9 +129,165 @@ public class MyTests {
 		    model.setPump(0, new PumpModels.Ideal(0, config.getPumpCapacity(0), model));
 		    model.setPumpStatus(0, PhysicalUnits.ComponentStatus.REPAIRED);
 		    
-		    clockUntil(60, controller, model, atleast(MODE_normal));
+		    clockOnceExpecting( controller, model, atleast(MODE_normal));
 		    
 		  }
+	  
+	  
+	  @Test
+	  public void test_pumpLockedOn3() {
+		    SteamBoilerCharacteristics config = SteamBoilerCharacteristics.DEFAULT;
+		    MySteamBoilerController controller = new MySteamBoilerController(config);
+		    PhysicalUnits model = new PhysicalUnits.Template(config).construct();
+		    // Wait at most 60s for controller to get to READY state
+		    model.setMode(PhysicalUnits.Mode.WAITING);
+		    int id = 3;
+		    clockUntil(90, controller, model, atleast(PROGRAM_READY));
+		    // At this point, level should be within normal bounds
+		    assertTrue(model.getBoiler().getWaterLevel() <= config.getMaximalNormalLevel());
+		    assertTrue(model.getBoiler().getWaterLevel() >= config.getMinimalNormalLevel());
+		    
+		    model.setPump(id, new PumpModels.SticksOpen(id, 4, model));
+		    model.getPump(id).open();
+		    
+		    clockUntil(60, controller, model, atleast(MODE_degraded));
+		    
+		    //System.out.println(model.getControllerStatus(id).toString());
+		    
+		    model.setPump(id, new PumpModels.Ideal(id, config.getPumpCapacity(0), model));
+		    model.setPumpStatus(id, PhysicalUnits.ComponentStatus.REPAIRED);
+		    
+		    clockOnceExpecting( controller, model, atleast(MODE_normal));
+		    
+		  }
+	  
+	  
+	  /**
+	   * Check controller enters degraded mode after obvious level sensor failure. This has to be done
+	   * after initialisation as well, since otherwise it would emergency stop.
+	   * Then see if after repair we go back to normal
+	   */
+	  @Test
+	  public void test_rescue_mode_normal() {
+	    SteamBoilerCharacteristics config = SteamBoilerCharacteristics.DEFAULT;
+	    MySteamBoilerController controller = new MySteamBoilerController(config);
+	    PhysicalUnits model = new PhysicalUnits.Template(config).construct();
+	    model.setMode(PhysicalUnits.Mode.WAITING);
+	    // Clock system for a given amount of time. We're not expecting anything to go
+	    // wrong during this time.
+	    clockForWithout(240, controller, model, atleast(MODE_emergencystop));
+	    // Now, break the level sensor in an obvious fashion.
+	    model.setLevelSensor(new LevelSensorModels.Stuck(model,config.getCapacity()));
+	    //
+	    clockOnceExpecting(controller, model, atleast(MODE_rescue, LEVEL_FAILURE_DETECTION));
+	    clockForWithout(60, controller, model, atleast(MODE_emergencystop));
+	    model.setLevelSensorStatus(PhysicalUnits.ComponentStatus.REPAIRED);
+	    model.setLevelSensor(new LevelSensorModels.Ideal(model));
+	    clockOnceExpecting(controller, model, atleast(MODE_normal));
+	  }
+	  
+	  
+	  @Test
+	  public void test_initialisation_drain_then_fill() {
+	    SteamBoilerCharacteristics config = SteamBoilerCharacteristics.DEFAULT;
+	    config.setEvacuationRate(20);
+	    MySteamBoilerController controller = new MySteamBoilerController(config);
+	    PhysicalUnits model = new PhysicalUnits.Template(config).construct();
+	    // Set water level above normal maximum
+	    model.getBoiler().pumpInWater(config.getMaximalNormalLevel() + 10);
+	    // Wait at most 60s for controller to get to READY state
+	    model.setMode(PhysicalUnits.Mode.WAITING);
+	    clockUntil(60, controller, model, atleast(PROGRAM_READY));
+	    // At this point, level should be within normal bounds
+	    assertTrue(model.getBoiler().getWaterLevel() <= config.getMaximalNormalLevel());
+	    assertTrue(model.getBoiler().getWaterLevel() >= config.getMinimalNormalLevel());
+	    // DONE
+	  }
+	  
+	  
+	  /**
+	   * See that we detect pump telling us wrong details
+	   * then go back to normal once fixed
+	   * Goes down branch 1 of checkPumps
+	   */
+	  @Test
+	  public void test_pump_tx_failure() {
+	    SteamBoilerCharacteristics config = SteamBoilerCharacteristics.DEFAULT;
+	    MySteamBoilerController controller = new MySteamBoilerController(config);
+	    PhysicalUnits model = new PhysicalUnits.Template(config).construct();
+	    model.setMode(PhysicalUnits.Mode.WAITING);
+	    // Clock system for a given amount of time. We're not expecting anything to go
+	    // wrong during this time.
+	    clockForWithout(240, controller, model, atleast(MODE_emergencystop));
+	    // Now, break the level sensor in an obvious fashion.
+	   model.setPump(0, new PumpModels.TxFailure(false, 0, 4, model));
+	   //System.out.println("break");
+	    //
+	    clockOnceExpecting(controller, model, atleast(MODE_degraded));
+	    clockForWithout(60, controller, model, atleast(MODE_emergencystop));
+	    model.setPump(0, new PumpModels.Ideal(0, 4, model));
+	    model.setPumpStatus(0, PhysicalUnits.ComponentStatus.REPAIRED);
+	    
+	    clockOnceExpecting(controller, model, atleast(MODE_normal));
+	  }
+
+	  /**
+	   * See that we detect pump 4 telling us wrong details
+	   * then go back to normal once fixed
+	   * Goes down branch 1 of checkPumps
+	   */
+	  @Test
+	  public void test_pump_tx_failure4() {
+	    SteamBoilerCharacteristics config = SteamBoilerCharacteristics.DEFAULT;
+	    MySteamBoilerController controller = new MySteamBoilerController(config);
+	    PhysicalUnits model = new PhysicalUnits.Template(config).construct();
+	    model.setMode(PhysicalUnits.Mode.WAITING);
+	    // Clock system for a given amount of time. We're not expecting anything to go
+	    // wrong during this time.
+	    clockForWithout(240, controller, model, atleast(MODE_emergencystop));
+	    // Now, break the level sensor in an obvious fashion.
+	    model.setPump(3, new PumpModels.TxFailure(true, 3, 4, model));
+	   // System.out.println("break");
+	    //
+	    clockOnceExpecting(controller, model, atleast(MODE_degraded));
+	    clockForWithout(60, controller, model, atleast(MODE_emergencystop));
+	    model.setPump(3, new PumpModels.Ideal(3, 4, model));
+	    model.setPumpStatus(3, PhysicalUnits.ComponentStatus.REPAIRED);
+	    
+	    clockOnceExpecting(controller, model, atleast(MODE_normal));
+	  }
+	  
+	  /**
+	   * See that we detect pump 0 is telling us wrong info and locked closed
+	   * then go back to normal once fixed
+	   * Goes down branch 1 of checkPumps
+	   */
+	  @Test
+	  public void test_pump_txandLocked() {
+	    SteamBoilerCharacteristics config = SteamBoilerCharacteristics.DEFAULT;
+	    MySteamBoilerController controller = new MySteamBoilerController(config);
+	    PhysicalUnits model = new PhysicalUnits.Template(config).construct();
+	    model.setMode(PhysicalUnits.Mode.WAITING);
+	    // Clock system for a given amount of time. We're not expecting anything to go
+	    // wrong during this time.
+	    int id = 0;
+	    clockForWithout(240, controller, model, atleast(MODE_emergencystop));
+	    // Now, break the level sensor in an obvious fashion.
+	    model.setPump(id, new PumpModels.TxFailure(true, id, 4, model));
+	    model.getPump(id).close();
+	   // System.out.println("break");
+	   
+	    //
+	    clockOnceExpecting(controller, model, atleast(MODE_degraded));
+	   
+	    //System.out.println(controller.)
+	    clockForWithout(60, controller, model, atleast(MODE_emergencystop));
+	    model.setPump(id, new PumpModels.Ideal(id, 4, model));
+	    model.setPumpStatus(id, PhysicalUnits.ComponentStatus.REPAIRED);
+	    
+	    clockOnceExpecting(controller, model, atleast(MODE_normal));
+	  }
+				
 
 	
 }

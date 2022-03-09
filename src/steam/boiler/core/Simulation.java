@@ -1,5 +1,7 @@
 package steam.boiler.core;
 
+import org.eclipse.jdt.annotation.NonNull;
+
 import steam.boiler.simulator.SimulationCharacteristicsDialog;
 import steam.boiler.util.SteamBoilerCharacteristics;
 
@@ -11,10 +13,15 @@ import steam.boiler.util.SteamBoilerCharacteristics;
  *
  */
 public class Simulation {
-	public static void main(String[] args) {
-		// Begin the simulation by opening the characteristics selection dialog.
-		new SimulationCharacteristicsDialog((SteamBoilerCharacteristics cs) -> {
-			return new MySteamBoilerController(cs);
-		});
-	}
+  /**
+   * Constructs a new simulation window.
+   *
+   * @param args Command-line arguments (these are ignored).
+   */
+  public static void main(String[] args) {
+    // Begin the simulation by opening the characteristics selection dialog.
+    new SimulationCharacteristicsDialog((@NonNull SteamBoilerCharacteristics cs) -> {
+      return new MySteamBoilerController(cs);
+    }).setVisible(true);
+  }
 }

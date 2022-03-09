@@ -1,9 +1,16 @@
 package steam.boiler.tests;
 
+import static steam.boiler.tests.TestUtils.MODE_emergencystop;
+import static steam.boiler.tests.TestUtils.atleast;
+import static steam.boiler.tests.TestUtils.clockForWithout;
+import static steam.boiler.tests.TestUtils.clockOnceExpecting;
+import static steam.boiler.tests.TestUtils.clockUntil;
+
+import java.util.function.Function;
+
 import org.junit.FixMethodOrder;
 import org.junit.Test;
 import org.junit.runners.MethodSorters;
-
 import steam.boiler.core.MySteamBoilerController;
 import steam.boiler.model.LevelSensorModels;
 import steam.boiler.model.PhysicalUnits;
@@ -12,10 +19,6 @@ import steam.boiler.model.PumpModels;
 import steam.boiler.model.SteamBoilerModels;
 import steam.boiler.model.SteamSensorModels;
 import steam.boiler.util.SteamBoilerCharacteristics;
-
-import static steam.boiler.tests.TestUtils.*;
-
-import java.util.function.Function;
 
 /**
  * These tests are designed to test the functional requirements of the steam boiler system.
@@ -27,6 +30,11 @@ import java.util.function.Function;
  */
 @FixMethodOrder(MethodSorters.NAME_ASCENDING)
 public class SafetyTests {
+  /**
+   * Default configuration. This is actually used just to prevent Eclipse from
+   * reporting that every method could be static!
+   */
+  private final SteamBoilerCharacteristics defaultConfig = SteamBoilerCharacteristics.DEFAULT;
 
   // =============================================================================
   // INITIALISATION
@@ -37,7 +45,7 @@ public class SafetyTests {
    */
   @Test
   public void safetytest_01() {
-    SteamBoilerCharacteristics config = SteamBoilerCharacteristics.DEFAULT;
+    SteamBoilerCharacteristics config = this.defaultConfig;
     MySteamBoilerController controller = new MySteamBoilerController(config);
     PhysicalUnits model = new PhysicalUnits.Template(config).construct();
     model.setMode(PhysicalUnits.Mode.WAITING);
@@ -54,7 +62,7 @@ public class SafetyTests {
    */
   @Test
   public void safetytest_02() {
-    SteamBoilerCharacteristics config = SteamBoilerCharacteristics.DEFAULT;
+    SteamBoilerCharacteristics config = this.defaultConfig;
     MySteamBoilerController controller = new MySteamBoilerController(config);
     PhysicalUnits model = new PhysicalUnits.Template(config).construct();
     model.setMode(PhysicalUnits.Mode.WAITING);
@@ -72,7 +80,7 @@ public class SafetyTests {
    */
   @Test
   public void safetytest_03() {
-    SteamBoilerCharacteristics config = SteamBoilerCharacteristics.DEFAULT;
+    SteamBoilerCharacteristics config = this.defaultConfig;
     MySteamBoilerController controller = new MySteamBoilerController(config);
     PhysicalUnits model = new PhysicalUnits.Template(config).construct();
     model.setMode(PhysicalUnits.Mode.WAITING);
@@ -88,7 +96,7 @@ public class SafetyTests {
    */
   @Test
   public void safetytest_04() {
-    SteamBoilerCharacteristics config = SteamBoilerCharacteristics.DEFAULT;
+    SteamBoilerCharacteristics config = this.defaultConfig;
     // Check various time frames before transmission failure
     for (int t = 0; t != 120; ++t) {
       MySteamBoilerController controller = new MySteamBoilerController(config);
@@ -110,7 +118,7 @@ public class SafetyTests {
    */
   @Test
   public void safetytest_05() {
-    SteamBoilerCharacteristics config = SteamBoilerCharacteristics.DEFAULT;
+    SteamBoilerCharacteristics config = this.defaultConfig;
     // Check various time frames before transmission failure
     for (int t = 0; t != 120; ++t) {
       MySteamBoilerController controller = new MySteamBoilerController(config);
@@ -133,7 +141,7 @@ public class SafetyTests {
    */
   @Test
   public void safetytest_06() {
-    SteamBoilerCharacteristics config = SteamBoilerCharacteristics.DEFAULT;
+    SteamBoilerCharacteristics config = this.defaultConfig;
     // Check various time frames before transmission failure
     for (int t = 0; t != 120; ++t) {
       // Try each pump individually
@@ -158,7 +166,7 @@ public class SafetyTests {
    */
   @Test
   public void safetytest_07() {
-    SteamBoilerCharacteristics config = SteamBoilerCharacteristics.DEFAULT;
+    SteamBoilerCharacteristics config = this.defaultConfig;
     // Check various time frames before transmission failure
     for (int t = 0; t != 120; ++t) {
       // Try each pump in turn
@@ -186,18 +194,22 @@ public class SafetyTests {
    */
   @Test
   public void safetytest_08() {
-    SteamBoilerCharacteristics config = SteamBoilerCharacteristics.DEFAULT;
+    SteamBoilerCharacteristics config = this.defaultConfig;
     MySteamBoilerController controller = new MySteamBoilerController(config);
     PhysicalUnits model = new PhysicalUnits.Template(config).construct();
     model.setMode(PhysicalUnits.Mode.WAITING);
-    Function<Integer, Double> conversionModel = (Integer elapsed) -> SteamBoilerModels
-        .linearSteamConversionModel(elapsed, 60000, config.getMaximualSteamRate());
+    Function<Integer, Double> conversionModel = (Integer elapsed) -> {
+      Double d = Double.valueOf(SteamBoilerModels.linearSteamConversionModel(elapsed.intValue(),
+          60000, config.getMaximualSteamRate()));
+      assert d != null;
+      return d;
+    };
     // Clock system for a given amount of time. We're not expecting anything to go
     // wrong during this time.
     clockForWithout(240, controller, model, atleast(MODE_emergencystop));
-    // Under ideal conditions, should get here without problems. Now, break the steam boiler! With
-    // four pumps at default 4L/s, that's a maximum filling of 16L/s. Therefore, evacuation needs to
-    // be more than that.
+    // Under ideal conditions, should get here without problems. Now, break the
+    // steam boiler! With four pumps at DEFAULT 4L/s, that's a maximum filling of 16L/s.
+    // Therefore, evacuation needs to be more than that.
     model.setBoiler(
         new SteamBoilerModels.ValveStuck(true, config.getCapacity(), 20.0, conversionModel));
     // At this point, we have to wait for the emergency stop event. This can take some time as the
@@ -214,7 +226,7 @@ public class SafetyTests {
    */
   @Test
   public void safetytest_09() {
-    SteamBoilerCharacteristics config = SteamBoilerCharacteristics.DEFAULT;
+    SteamBoilerCharacteristics config = this.defaultConfig;
     MySteamBoilerController controller = new MySteamBoilerController(config);
     PhysicalUnits model = new PhysicalUnits.Template(config).construct();
     model.setMode(PhysicalUnits.Mode.WAITING);
@@ -240,7 +252,7 @@ public class SafetyTests {
    */
   @Test
   public void safetytest_10() {
-    SteamBoilerCharacteristics config = SteamBoilerCharacteristics.DEFAULT;
+    SteamBoilerCharacteristics config = this.defaultConfig;
     // Require only one pump
     config = config.setNumberOfPumps(1, config.getPumpCapacity(0));
     config = config.setPumpCapacity(0, 20);
@@ -269,7 +281,7 @@ public class SafetyTests {
    */
   @Test
   public void safetytest_11() {
-    SteamBoilerCharacteristics config = SteamBoilerCharacteristics.DEFAULT;
+    SteamBoilerCharacteristics config = this.defaultConfig;
     MySteamBoilerController controller = new MySteamBoilerController(config);
     PhysicalUnits model = new PhysicalUnits.Template(config).construct();
     model.setMode(PhysicalUnits.Mode.WAITING);
@@ -292,7 +304,7 @@ public class SafetyTests {
    */
   @Test
   public void safetytest_12() {
-    SteamBoilerCharacteristics config = SteamBoilerCharacteristics.DEFAULT;
+    SteamBoilerCharacteristics config = this.defaultConfig;
     MySteamBoilerController controller = new MySteamBoilerController(config);
     PhysicalUnits model = new PhysicalUnits.Template(config).construct();
     model.setMode(PhysicalUnits.Mode.WAITING);

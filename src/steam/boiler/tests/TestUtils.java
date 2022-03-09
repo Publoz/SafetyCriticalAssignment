@@ -4,15 +4,22 @@ import static org.junit.Assert.fail;
 
 import java.util.Arrays;
 
+import org.eclipse.jdt.annotation.Nullable;
+
 import steam.boiler.core.MySteamBoilerController;
 import steam.boiler.model.PhysicalUnits;
-import steam.boiler.tests.TestUtils.MailboxMatcher;
 import steam.boiler.util.Mailbox;
-import steam.boiler.util.UnboundedMailbox;
 import steam.boiler.util.Mailbox.Message;
 import steam.boiler.util.Mailbox.MessageKind;
 import steam.boiler.util.Mailbox.Mode;
+import steam.boiler.util.UnboundedMailbox;
 
+/**
+ * Various helper utilities for testing the steam boiler simulation.
+ *
+ * @author David J. Pearce
+ *
+ */
 public class TestUtils {
 
   // ========================================================================
@@ -74,6 +81,10 @@ public class TestUtils {
 
   /**
    * Match PUMP_FAILURE_DETECTION_n messages.
+   *
+   * @param n Pump number to detect.
+   *
+   * @return The matcher created.
    */
   public static MessageMatcher PUMP_FAILURE_DETECTION(int n) {
     return PUMP_FAILURE_DETECTION(new IntegerParameterMatcher(n));
@@ -81,6 +92,10 @@ public class TestUtils {
 
   /**
    * Match PUMP_FAILURE_DETECTION_n messages.
+   *
+   * @param matcher Matcher to be used for matching the pump.
+   *
+   * @return The matcher created.
    */
   public static MessageMatcher PUMP_FAILURE_DETECTION(ParameterMatcher matcher) {
     return new ConcreteMessageMatcher(MessageKind.PUMP_FAILURE_DETECTION_n, matcher);
@@ -88,6 +103,10 @@ public class TestUtils {
 
   /**
    * Match PUMP_CONTROL_FAILURE_DETECTION_n messages.
+   *
+   * @param n Pump number to detect.
+   *
+   * @return The matcher created.
    */
   public static MessageMatcher PUMP_CONTROL_FAILURE_DETECTION(int n) {
     return PUMP_CONTROL_FAILURE_DETECTION(new IntegerParameterMatcher(n));
@@ -95,53 +114,13 @@ public class TestUtils {
 
   /**
    * Match PUMP_CONTROL_FAILURE_DETECTION_n messages.
+   *
+   * @param matcher Matcher to be used for matching the pump.
+   *
+   * @return The matcher created.
    */
   public static MessageMatcher PUMP_CONTROL_FAILURE_DETECTION(ParameterMatcher matcher) {
     return new ConcreteMessageMatcher(MessageKind.PUMP_CONTROL_FAILURE_DETECTION_n, matcher);
-  }
-
-  /**
-   * Return a given PUMP message.
-   *
-   * @param n
-   *          Concrete PUMP paremeter to match.
-   * @return
-   */
-  public static MessageMatcher OpenPump(int n) {
-    return OpenPump(new IntegerParameterMatcher(n));
-  }
-
-  /**
-   * Return a given PUMP message.
-   *
-   * @param matcher
-   *          Matcher for PUMP_n parameter.
-   * @return
-   */
-  public static MessageMatcher OpenPump(ParameterMatcher matcher) {
-    return new ConcreteMessageMatcher(MessageKind.OPEN_PUMP_n, matcher);
-  }
-
-  /**
-   * Return a given PUMP message.
-   *
-   * @param n
-   *          Concrete PUMP paremeter to match.
-   * @return
-   */
-  public static MessageMatcher ClosePump(int n) {
-    return ClosePump(new IntegerParameterMatcher(n));
-  }
-
-  /**
-   * Return a given PUMP message.
-   *
-   * @param matcher
-   *          Matcher for PUMP_n parameter.
-   * @return
-   */
-  public static MessageMatcher ClosePump(ParameterMatcher matcher) {
-    return new ConcreteMessageMatcher(MessageKind.CLOSE_PUMP_n, matcher);
   }
 
   /**
@@ -152,8 +131,8 @@ public class TestUtils {
    * @param model
    *          The state of the PhysicalUnits, from which the set of input messages passed to the
    *          controller is determined.
-   * @param responses
-   *          The set of response matchers which are assumed to be out-of-order.
+   * @param matcher
+   *          The response matcher being used.
    */
   public static void clockOnceExpecting(MySteamBoilerController controller, PhysicalUnits model,
       MailboxMatcher matcher) {
@@ -165,7 +144,8 @@ public class TestUtils {
     controller.clock(input, output);
     // Check the response messages
     if (!matcher.matches(output)) {
-      fail("did not expect to receive " + output + ", expected " + matcher);
+      fail("did not expect to receive "  //$NON-NLS-1$
+          + output + ", expected " + matcher); //$NON-NLS-1$
     }
     // Apply message to model from controller
     model.receive(output);
@@ -190,9 +170,9 @@ public class TestUtils {
     final int granularity = 100; // ms
     int totalElapsed = 0; // ms
     // Convert timeout into microseconds
-    timeout = timeout * 1000;
+    int timeoutMs = timeout * 1000;
     //
-    while (totalElapsed < timeout) {
+    while (totalElapsed < timeoutMs) {
       Mailbox received = clock(granularity, totalElapsed, controller, physicalUnits);
       if (received != null) {
         // We received something back from controller, there see whether we have matched our event.
@@ -203,7 +183,7 @@ public class TestUtils {
       totalElapsed += granularity;
     }
     // If we get here, then the event wasn't matched within the required timeframe.
-    fail("timeout occurred");
+    fail("timeout occurred"); //$NON-NLS-1$
   }
 
   /**
@@ -224,15 +204,16 @@ public class TestUtils {
     final int granularity = 100; // ms
     int totalElapsed = 0; // ms
     // Convert timeout into microseconds
-    time = time * 1000;
+    int timeMs = time * 1000;
     //
-    while (totalElapsed < time) {
-      Mailbox received = clock(granularity, totalElapsed, controller, physicalUnits);
+    while (totalElapsed < timeMs) {
+      @Nullable Mailbox received = clock(granularity, totalElapsed, controller, physicalUnits);
       if (received != null) {
         // We received something back from controller, there see whether we have matched our event.
         if (matcher.matches(received)) {
           // If we've matched this event, then that's bad news.
-          fail("bad event happened after " + totalElapsed + "ms (" + received + ")");
+          fail("bad event happened after " + totalElapsed //$NON-NLS-1$
+              + "ms (" + received + ")"); //$NON-NLS-1$ //$NON-NLS-2$
         }
       }
       totalElapsed += granularity;
@@ -257,7 +238,7 @@ public class TestUtils {
    *          The model of the physical units being manipulated.
    * @return Any messages received from the controller, or null if this wasn't a transmission cycle.
    */
-  public static Mailbox clock(int elapsed, int totalElapsed, MySteamBoilerController controller,
+  public static @Nullable Mailbox clock(int elapsed, int totalElapsed, MySteamBoilerController controller,
       PhysicalUnits physicalUnits) {
     physicalUnits.clock(elapsed);
     // After every five seconds has elapsed we allow the controller and physical units to
@@ -273,10 +254,9 @@ public class TestUtils {
       physicalUnits.receive(output);
       // return messages received from controller
       return output;
-    } else {
-      // Nothing to return
-      return null;
     }
+    // Nothing to return
+    return null;
   }
 
   /**
@@ -320,10 +300,11 @@ public class TestUtils {
   }
 
   /**
-   * Construct a mailbox matcher which requires every message to be matched by exactly one matcher.
+   * Construct a mailbox matcher which requires every message to be matched by
+   * exactly one matcher.
    *
    * @param matchers The set of matches
-   * @return
+   * @return The combined matcher.
    */
   public static MailboxMatcher exactly(final MessageMatcher... matchers) {
     return new MailboxMatcher() {
@@ -332,29 +313,28 @@ public class TestUtils {
       public boolean matches(Mailbox mailbox) {
         if (mailbox.size() != matchers.length) {
           return false;
-        } else {
-          boolean[] matches = new boolean[mailbox.size()];
-          for (int j = 0; j != matchers.length; ++j) {
-            int m = matchers[j].match(mailbox);
-            if (m >= 0) {
-              matches[m] = true;
-            } else {
-              return false;
-            }
-          }
-          // Sanity check matches
-          for (int i = 0; i != matches.length; ++i) {
-            if (!matches[i]) {
-              return false;
-            }
-          }
-          return true;
         }
+        boolean[] matches = new boolean[mailbox.size()];
+        for (int j = 0; j != matchers.length; ++j) {
+          int m = matchers[j].match(mailbox);
+          if (m >= 0) {
+            matches[m] = true;
+          } else {
+            return false;
+          }
+        }
+        // Sanity check matches
+        for (int i = 0; i != matches.length; ++i) {
+          if (!matches[i]) {
+            return false;
+          }
+        }
+        return true;
       }
 
       @Override
       public String toString() {
-        return "exactly" + Arrays.toString(matchers);
+        return "exactly" + Arrays.toString(matchers); //$NON-NLS-1$
       }
     };
   }
@@ -363,7 +343,7 @@ public class TestUtils {
    * Construct a mailbox matcher which requires every matcher to match something.
    *
    * @param matchers The set of matches
-   * @return
+   * @return The constructed mailbox matcher
    */
   public static MailboxMatcher atleast(final MessageMatcher... matchers) {
     return new MailboxMatcher() {
@@ -381,7 +361,7 @@ public class TestUtils {
 
       @Override
       public String toString() {
-        return "atleast" + Arrays.toString(matchers);
+        return "atleast" + Arrays.toString(matchers); //$NON-NLS-1$
       }
     };
   }
@@ -393,43 +373,47 @@ public class TestUtils {
    * @author David J. Pearce
    *
    */
-  private static class ConcreteMessageMatcher implements MailboxMatcher,MessageMatcher {
+  private static class ConcreteMessageMatcher implements MailboxMatcher, MessageMatcher {
+    /**
+     * Type of message to match.
+     */
     private final MessageKind kind;
-    private final ParameterMatcher parameter;
 
+    /**
+     * Matcher for message parameter (if any).
+     */
+    private final @Nullable ParameterMatcher parameter;
+
+    /**
+     * Construct message matcher for given kind.
+     *
+     * @param kind Type of message to match.
+     */
     public ConcreteMessageMatcher(MessageKind kind) {
       this.kind = kind;
       this.parameter = null;
     }
 
+    /**
+     * Construct message matcher for given kind.
+     *
+     * @param kind      Type of message to match.
+     * @param parameter Matcher to use for parameter.
+     */
     public ConcreteMessageMatcher(MessageKind kind, ParameterMatcher parameter) {
       this.kind = kind;
       this.parameter = parameter;
     }
 
+    /**
+     * Construct message matcher for given kind.
+     *
+     * @param kind          Type of message to match.
+     * @param modeParameter Mode to match for parameter.
+     */
     public ConcreteMessageMatcher(MessageKind kind, Mode modeParameter) {
       this.kind = kind;
       this.parameter = new ModeParameterMatcher(modeParameter);
-    }
-
-    public ConcreteMessageMatcher(MessageKind kind, int integerParameter) {
-      this.kind = kind;
-      this.parameter = new IntegerParameterMatcher(integerParameter);
-    }
-
-    public ConcreteMessageMatcher(MessageKind kind, boolean booleanParameter) {
-      this.kind = kind;
-      this.parameter = new BooleanParameterMatcher(booleanParameter);
-    }
-
-    public ConcreteMessageMatcher(MessageKind kind, double doubleParameter) {
-      this.kind = kind;
-      this.parameter = new DoubleParameterMatcher(doubleParameter);
-    }
-
-    @Override
-    public boolean matches(Mailbox m) {
-      return match(m) >= 0;
     }
 
     @Override
@@ -442,9 +426,20 @@ public class TestUtils {
       return -1;
     }
 
+    @Override
+    public boolean matches(Mailbox m) {
+      return match(m) >= 0;
+    }
+
+    /**
+     * Attempt to match a given message against this matcher.
+     *
+     * @param m The message to match.
+     * @return <code>true</code> if a match is made, <code>false</code> otherwise.
+     */
     private boolean matches(Message m) {
-      if (m.getKind() == kind) {
-        switch (kind) {
+      if (m.getKind() == this.kind) {
+        switch (this.kind) {
           case PROGRAM_READY:
           case PHYSICAL_UNITS_READY:
           case VALVE:
@@ -459,8 +454,11 @@ public class TestUtils {
           case LEVEL_FAILURE_ACKNOWLEDGEMENT:
           case STEAM_OUTCOME_FAILURE_ACKNOWLEDGEMENT:
             return true;
-          case MODE_m:
-            return parameter.matches(m.getModeParameter());
+          case MODE_m: {
+            ParameterMatcher p = this.parameter;
+            assert p != null;
+            return p.matches(m.getModeParameter());
+          }
           case OPEN_PUMP_n:
           case CLOSE_PUMP_n:
           case PUMP_FAILURE_DETECTION_n:
@@ -469,16 +467,25 @@ public class TestUtils {
           case PUMP_CONTROL_REPAIRED_ACKNOWLEDGEMENT_n:
           case PUMP_REPAIRED_n:
           case PUMP_CONTROL_REPAIRED_n:
-          case PUMP_FAILURE_ACKNOWLEDGEMENT_n:
-            return parameter.matches(m.getIntegerParameter());
+          case PUMP_FAILURE_ACKNOWLEDGEMENT_n: {
+            ParameterMatcher p = this.parameter;
+            assert p != null;
+            return p.matches(m.getIntegerParameter());
+          }
           case LEVEL_v:
-          case STEAM_v:
-            return parameter.matches(m.getDoubleParameter());
+          case STEAM_v:{
+            ParameterMatcher p = this.parameter;
+            assert p != null;
+            return p.matches(m.getDoubleParameter());
+          }
           case PUMP_STATE_n_b:
-          case PUMP_CONTROL_STATE_n_b:
-            return parameter.matches(m.getIntegerParameter(), m.getBooleanParameter());
+          case PUMP_CONTROL_STATE_n_b: {
+            ParameterMatcher p = this.parameter;
+            assert p != null;
+            return p.matches(m.getIntegerParameter(), m.getBooleanParameter());
+          }
           default:
-            throw new IllegalArgumentException("invalid message kind");
+            throw new IllegalArgumentException("invalid message kind"); //$NON-NLS-1$
         }
       }
       return false;
@@ -486,9 +493,10 @@ public class TestUtils {
 
     @Override
     public String toString() {
-      String r = kind.toString();
-      if (parameter != null) {
-        r += "(" + parameter + ")";
+      String r = this.kind.toString();
+      assert r != null;
+      if (this.parameter != null) {
+        r += "(" + this.parameter + ")"; //$NON-NLS-1$ //$NON-NLS-2$
       }
       return r;
     }
@@ -506,55 +514,45 @@ public class TestUtils {
      *
      * @param m
      *          mode parameter
-     * @return
+     * @return True if match occurs
      */
-    public boolean matches(Mode m) {
-      return false;
-    }
+    public abstract boolean matches(Mode m);
 
     /**
      * Attempt to match an integer parameter.
      *
      * @param n
      *          integer parameter
-     * @return
+     * @return True if match occurs
      */
-    public boolean matches(int n) {
-      return false;
-    }
+    public abstract boolean matches(int n);
 
     /**
      * Attempt to match a boolean parameter.
      *
      * @param b
      *          boolean parameter
-     * @return
+     * @return True if match occurs
      */
-    public boolean matches(boolean b) {
-      return false;
-    }
+    public abstract boolean matches(boolean b);
 
     /**
      * Attempt to match a double parameter.
      *
      * @param v
      *          double parameter
-     * @return
+     * @return True if match occurs
      */
-    public boolean matches(double v) {
-      return false;
-    }
+    public abstract boolean matches(double v);
 
     /**
      * Attempt to match an integer and boolean parameter pair.
      *
-     * @param b
-     *          boolean parameter
-     * @return
+     * @param n integer parameter
+     * @param b boolean parameter
+     * @return True if match occurs
      */
-    public boolean matches(int n, boolean b) {
-      return false;
-    }
+    public abstract boolean matches(int n, boolean b);
   }
 
   /**
@@ -588,7 +586,7 @@ public class TestUtils {
 
     @Override
     public String toString() {
-      return "?";
+      return "?"; //$NON-NLS-1$
     }
   };
 
@@ -599,20 +597,50 @@ public class TestUtils {
    *
    */
   private static class ModeParameterMatcher extends ParameterMatcher {
+    /**
+     * The mode to match against.
+     */
     private final Mode value;
 
+    /**
+     * Construct a new matcher for a given mode.
+     *
+     * @param value The mode to match against.
+     */
     public ModeParameterMatcher(Mode value) {
       this.value = value;
     }
 
     @Override
-    public boolean matches(Mode value) {
-      return this.value.equals(value);
+    public boolean matches(Mode v) {
+      return this.value.equals(v);
+    }
+
+    @Override
+    public boolean matches(int n) {
+      return false;
+    }
+
+    @Override
+    public boolean matches(boolean b) {
+      return false;
+    }
+
+    @Override
+    public boolean matches(double v) {
+      return false;
+    }
+
+    @Override
+    public boolean matches(int n, boolean b) {
+      return false;
     }
 
     @Override
     public String toString() {
-      return value.toString();
+      String v = this.value.toString();
+      assert v != null;
+      return v;
     }
   }
 
@@ -623,68 +651,50 @@ public class TestUtils {
    *
    */
   private static class IntegerParameterMatcher extends ParameterMatcher {
+    /**
+     * The integer parameter to match against.
+     */
     private final int value;
 
+    /**
+     * Construct a new matcher for a given integer value.
+     *
+     * @param value The integer value to match against.
+     */
     public IntegerParameterMatcher(int value) {
       this.value = value;
     }
 
     @Override
-    public boolean matches(int value) {
-      return this.value == value;
+    public boolean matches(int val) {
+      return this.value == val;
+    }
+
+    @Override
+    public boolean matches(Mode m) {
+      return false;
+    }
+
+    @Override
+    public boolean matches(boolean b) {
+      return false;
+    }
+
+    @Override
+    public boolean matches(double v) {
+      return false;
+    }
+
+    @Override
+    public boolean matches(int n, boolean b) {
+      return false;
     }
 
     @Override
     public String toString() {
-      return Integer.toString(value);
-    }
-  }
-
-  /**
-   * Match a double parameter exactly.
-   *
-   * @author David J. Pearce
-   *
-   */
-  private static class DoubleParameterMatcher extends ParameterMatcher {
-    private final double value;
-
-    public DoubleParameterMatcher(double value) {
-      this.value = value;
-    }
-
-    @Override
-    public boolean matches(double value) {
-      return this.value == value;
-    }
-
-    @Override
-    public String toString() {
-      return Double.toString(value);
-    }
-  }
-
-  /**
-   * Match a boolean parameter exactly.
-   *
-   * @author David J. Pearce
-   *
-   */
-  private static class BooleanParameterMatcher extends ParameterMatcher {
-    private final boolean value;
-
-    public BooleanParameterMatcher(boolean value) {
-      this.value = value;
-    }
-
-    @Override
-    public boolean matches(boolean value) {
-      return this.value == value;
-    }
-
-    @Override
-    public String toString() {
-      return Boolean.toString(value);
+      String s = Integer.toString(this.value);
+      assert s != null;
+      return s;
     }
   }
 }
