@@ -84,6 +84,28 @@ public class MySteamBoilerController implements SteamBoilerController {
    * What the reading of the last steam sensor was.
    */
   private double lastSteam = 0;
+  
+  /**
+   * Records whether we might have had a controller failure
+   */
+  private boolean controlFailure = false;
+  
+  /**
+   * Stores which pump might have failed
+   */
+  private int pumpFailed = -1;
+  
+  /**
+   * Records the last water level
+   */
+  private double lastWater = -1;
+  
+  /**
+   * Did we go to rescue last cycle
+   */
+  private boolean lastRescue = false;
+  
+  private boolean valveBrokeLast = false;
 
   /**
    * An int array that records what parts are broken and what type of failure it
@@ -258,12 +280,18 @@ public class MySteamBoilerController implements SteamBoilerController {
     }
 
     this.lastSteam = steamMessage.getDoubleParameter();
+    this.lastWater = levelMessage.getDoubleParameter();
     // NOTE: this is an example message send to illustrate the syntax
     // outgoing.send(new Message(MessageKind.MODE_m, Mailbox.Mode.INITIALISATION));
   }
 
   /**
    * Check whether we are approaching one of the limits.
+   * 
+   * <p>If expected range lies outside the max or min of allowed
+   * level then go to emergency mode. Alternatively, if we are not
+   * in rescue mode and we are one pump's worth away from limit
+   * also go to emergency mode.
 
    * @param levelMessage the level message
    * @param steamMessage the steam level message
@@ -271,12 +299,23 @@ public class MySteamBoilerController implements SteamBoilerController {
    */
   private void checkLimitLevels(Message levelMessage, Message steamMessage, Mailbox outgoing) {
 
+//     System.out.println("----");
+//     System.out.println(this.configuration.getMinimalLimitLevel());
+//     System.out.println(this.expectedRange[0]);
+//     System.out.println(levelMessage.getDoubleParameter());
+//     System.out.println(this.expectedRange[1]);
+     
+    
     if (this.expectedRange[0] == -1) {
       return;
     }
 
     if (this.expectedRange[1] > this.configuration.getMaximalLimitLevel()
-        || this.expectedRange[0] < this.configuration.getMinimalLimitLevel()) {
+        || this.expectedRange[0] < this.configuration.getMinimalLimitLevel()
+        || (this.mode != State.RESCUE && levelMessage.getDoubleParameter() 
+        - this.configuration.getPumpCapacity(0) < this.configuration.getMinimalLimitLevel())
+        | (this.mode != State.RESCUE && levelMessage.getDoubleParameter() 
+        + this.configuration.getPumpCapacity(0) > this.configuration.getMaximalLimitLevel())) {
       emergencyMode(outgoing);
     }
 
@@ -429,6 +468,55 @@ public class MySteamBoilerController implements SteamBoilerController {
    */
   private void checkFailures(Message level, Message steam, Message[] pumps, Message[] controls,
       Mailbox outgoing) {
+    
+   
+    if(this.controlFailure) {
+      if(level.getDoubleParameter() < this.expectedRange[0]) {
+        outgoing.send(new Message(MessageKind.PUMP_FAILURE_DETECTION_n, this.pumpFailed));
+        this.brokenParts[3+this.pumpFailed] = 2;
+        this.pumpsState[this.pumpFailed] = false;
+      } else if(level.getDoubleParameter() > this.expectedRange[1]) {
+        outgoing.send(new Message(MessageKind.PUMP_FAILURE_DETECTION_n, this.pumpFailed));
+        this.brokenParts[3+this.pumpFailed] = 1;
+        this.pumpsState[this.pumpFailed] = true;
+      } else {
+        outgoing.send(new Message(MessageKind.PUMP_CONTROL_FAILURE_DETECTION_n, this.pumpFailed));
+        this.brokenParts[3+this.configuration.getNumberOfPumps()+this.pumpFailed] = 1;
+      }
+      this.controlFailure = false;
+      this.pumpFailed = -1;
+    } else if(this.lastRescue) {
+      if(withinRange(level.getDoubleParameter() + (this.configuration.getEvacuationRate()*5)
+          - ((this.lastSteam + steam.getDoubleParameter())/ 2 ), this.lastWater)) {
+       
+        System.out.println("###");
+        System.out.println(level.getDoubleParameter() + (this.configuration.getEvacuationRate()*5)
+          - ((this.lastSteam + steam.getDoubleParameter())/ 2 ));
+        System.out.println(lastWater);
+        
+        this.mode = State.DEGRADED;
+        this.brokenParts[2] = 0;
+        System.out.println("VALVE Broken");
+       
+        if(this.brokenParts[0] == 0) {
+          this.expectedRange[0] = this.expectedRange[0] - (this.configuration.getEvacuationRate()*5);
+              
+          this.expectedRange[1] = this.expectedRange[1] - (this.configuration.getEvacuationRate()*5);
+          this.valveBrokeLast = true;
+        } else if(this.valveBrokeLast) {
+          this.valveBrokeLast = false;
+          this.expectedRange[0] = this.expectedRange[0] - 5;
+          
+          this.expectedRange[1] = this.expectedRange[1] - 5;
+        }
+        this.brokenParts[0] = 1;
+
+      } else {
+        //Actual levelFailure
+      }
+      this.lastRescue = false;
+    }
+    
     double steamVal = steam.getDoubleParameter();
     if (steamVal < 0 || steamVal > this.configuration.getMaximualSteamRate()
         || this.lastSteam > steamVal) {
@@ -449,23 +537,30 @@ public class MySteamBoilerController implements SteamBoilerController {
           outgoing.send(new Message(MessageKind.PUMP_FAILURE_DETECTION_n, i));
           break; // assume 1 error
         }
-        System.out.println("Control failure");
-        System.out.println(this.pumpsState[i]);
-        System.out.println(pumps[i].getBooleanParameter());
-        System.out.println(controls[i].getBooleanParameter());
+        System.out.println("Possible Control failure");
+       // System.out.println(this.pumpsState[i]);
+        //System.out.println(pumps[i].getBooleanParameter());
+        //System.out.println(controls[i].getBooleanParameter());
 
-        outgoing.send(new Message(MessageKind.PUMP_CONTROL_FAILURE_DETECTION_n, i));
+        //outgoing.send(new Message(MessageKind.PUMP_CONTROL_FAILURE_DETECTION_n, i));
         break; // assume 1 error
 
       }
 
+    
       // on last iteration, nothing is wrong with pumps so check water level is fine
       if (i == this.configuration.getNumberOfPumps() - 1) {
         if (waterLevelNormal(level.getDoubleParameter()) == false) {
           outgoing.send(new Message(MessageKind.LEVEL_FAILURE_DETECTION));
           this.mode = State.RESCUE;
           this.brokenParts[2] = 1;
-          // System.out.println("detect fail");
+          this.lastRescue = true;
+          System.out.println("RESCUE");
+           System.out.println(expectedRange[0]);
+          // //System.out.println(configuration.getMinimalLimitLevel());
+         System.out.println(level.getDoubleParameter());
+           System.out.println(expectedRange[1]);
+         System.out.println("----");
 
         }
       }
@@ -561,12 +656,13 @@ public class MySteamBoilerController implements SteamBoilerController {
         // control
         // wrong 5
         // Likely control failure
-        System.out.println("------");
-        System.out.println(this.expectedRange[0]);
-        System.out.println(level);
-        System.out.println(this.expectedRange[1]);
+//        System.out.println("------");
+//        System.out.println(this.expectedRange[0]);
+//        System.out.println(level);
+//        System.out.println(this.expectedRange[1]);
         this.test = true;
-
+        this.controlFailure = true;
+        this.pumpFailed = i;
         return 2; // could be 1
       } else if (control != this.pumpsState[i] && pump != this.pumpsState[i] 
           && !waterLevelNormal) { // pump,
@@ -747,29 +843,36 @@ public class MySteamBoilerController implements SteamBoilerController {
       // if(last ) //should check capacity is same for all
       // last = configuration.getPumpCapacity(j);
       // }
+      
+      
+      double shift = 0;
+      if(this.brokenParts[0] != 0) {
+        shift -= (this.configuration.getEvacuationRate() * 5);
+      }
+      
 
       double max = 0;
       double min = 0;
       if (this.mode != State.RESCUE) {
-        max = level.getDoubleParameter() + (5 * this.configuration.getPumpCapacity(0) * (i))
+        max = level.getDoubleParameter() + shift + (5 * this.configuration.getPumpCapacity(0) * (i))
             - (5 * steam.getDoubleParameter());
-        min = level.getDoubleParameter() + (5 * this.configuration.getPumpCapacity(0) * (i))
+        min = level.getDoubleParameter() + shift + (5 * this.configuration.getPumpCapacity(0) * (i))
             - (5 * this.configuration.getMaximualSteamRate());
       } else {
         // If in rescue mode we can't use the level so estimate based on what the
         // current max
         // could be
-        max = currentMax + (5 * this.configuration.getPumpCapacity(0) * (i))
+        max = currentMax + shift + (5 * this.configuration.getPumpCapacity(0) * (i))
             - (5 * steam.getDoubleParameter());
-        min = currentMin + (5 * this.configuration.getPumpCapacity(0) * (i))
+        min = currentMin + shift + (5 * this.configuration.getPumpCapacity(0) * (i))
             - (5 * this.configuration.getMaximualSteamRate());
       }
 
       if (Math.abs(((max + min) / 2) - this.target) < bestDist) {
         bestNum = i;
         bestDist = Math.abs(((max + min) / 2) - this.target);
-        this.expectedRange[0] = min - 0.2001;
-        this.expectedRange[1] = max + 0.2001; // add slight offset otherwise too sensitive
+        this.expectedRange[0] = min - 0.3001;
+        this.expectedRange[1] = max + 0.3001; // add slight offset otherwise too sensitive
 
       }
     }
@@ -928,6 +1031,20 @@ public class MySteamBoilerController implements SteamBoilerController {
         this.valveOpen = false;
       }
     }
+  }
+  
+  /**
+   * Return whether a number is within 0.3 of a target.
+   * 
+   * @param number the number we are seeing if in range
+   * @param target the target
+   * @return a boolean if in range
+   */
+  public boolean withinRange(double number, double target) {
+    if(target - 0.3 < number && target + 0.3 > number) {
+      return true;
+    }
+    return false;
   }
 
   /**

@@ -18,6 +18,8 @@ import static steam.boiler.tests.TestUtils.clockOnceExpecting;
 import static steam.boiler.tests.TestUtils.clockUntil;
 import static steam.boiler.tests.TestUtils.exactly;
 
+import java.util.function.Function;
+
 import org.junit.FixMethodOrder;
 import org.junit.Test;
 import org.junit.runners.MethodSorters;
@@ -27,6 +29,7 @@ import steam.boiler.model.LevelSensorModels;
 import steam.boiler.model.PhysicalUnits;
 import steam.boiler.model.PumpControllerModels;
 import steam.boiler.model.PumpModels;
+import steam.boiler.model.SteamBoilerModels;
 import steam.boiler.model.SteamSensorModels;
 import steam.boiler.util.Mailbox.Mode;
 import steam.boiler.util.SteamBoilerCharacteristics;
@@ -272,7 +275,7 @@ public class MyTests {
 	    // wrong during this time.
 	    int id = 0;
 	    clockForWithout(240, controller, model, atleast(MODE_emergencystop));
-	    // Now, break the level sensor in an obvious fashion.
+	    // Break pump
 	    model.setPump(id, new PumpModels.TxFailure(true, id, 4, model));
 	    model.getPump(id).close();
 	   // System.out.println("break");
@@ -287,6 +290,54 @@ public class MyTests {
 	    
 	    clockOnceExpecting(controller, model, atleast(MODE_normal));
 	  }
+	  
+	  
+	  /**
+     * See that we detect pump 0 is telling us wrong info and locked closed
+     * then go back to normal once fixed
+     * Goes down branch 1 of checkPumps
+     */
+    @Test
+    public void test_pump_valveStuckOpen() {
+      SteamBoilerCharacteristics config = SteamBoilerCharacteristics.DEFAULT;
+      //config.setEvacuationRate(7);
+      MySteamBoilerController controller = new MySteamBoilerController(config);
+      PhysicalUnits model = new PhysicalUnits.Template(config).construct();
+      model.setMode(PhysicalUnits.Mode.WAITING);
+      // Clock system for a given amount of time. We're not expecting anything to go
+      // wrong during this time.
+      int id = 0;
+      clockForWithout(240, controller, model, atleast(MODE_emergencystop));
+      // Break pump
+      Function<Integer, Double> conversionModel = (Integer elapsed) -> {
+        Double d = Double.valueOf(SteamBoilerModels.linearSteamConversionModel(elapsed.intValue(),
+            60000, config.getMaximualSteamRate()));
+        assert d != null;
+        return d;
+      };
+      model.setBoiler(
+          new SteamBoilerModels.ValveStuck(true, config.getCapacity(), 5, conversionModel, model));
+     // System.out.println("break");
+     //
+      //
+      clockUntil(10, controller, model, atleast(MODE_degraded));
+     
+      //System.out.println(controller.)
+      clockForWithout(240, controller, model, atleast(MODE_emergencystop));
+      
+    }
+    
+    @Test
+    public void range() {
+      SteamBoilerCharacteristics config = SteamBoilerCharacteristics.DEFAULT;
+      //config.setEvacuationRate(7);
+      MySteamBoilerController controller = new MySteamBoilerController(config);
+      
+      assert controller.withinRange(250.2, 250);
+      assert controller.withinRange(249.8, 250);
+    }
+    
+   
 				
 
 	
