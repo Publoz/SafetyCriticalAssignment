@@ -1,13 +1,13 @@
 package steam.boiler.tests;
 
 import static steam.boiler.tests.TestUtils.MODE_emergencystop;
+import static steam.boiler.tests.TestUtils.MODE_rescue;
 import static steam.boiler.tests.TestUtils.atleast;
 import static steam.boiler.tests.TestUtils.clockForWithout;
 import static steam.boiler.tests.TestUtils.clockOnceExpecting;
 import static steam.boiler.tests.TestUtils.clockUntil;
 
 import java.util.function.Function;
-
 import org.junit.FixMethodOrder;
 import org.junit.Test;
 import org.junit.runners.MethodSorters;
@@ -208,14 +208,12 @@ public class SafetyTests {
     // wrong during this time.
     clockForWithout(240, controller, model, atleast(MODE_emergencystop));
     // Under ideal conditions, should get here without problems. Now, break the
-    // steam boiler! With four pumps at DEFAULT 4L/s, that's a maximum filling of 16L/s.
-    // Therefore, evacuation needs to be more than that.
+    // steam boiler! With four pumps at default 4L/s, that's a maximum filling of 16L/s. Therefore,
+    // evacuation needs to be more than that.
     model.setBoiler(
-        new SteamBoilerModels.ValveStuck(true, config.getCapacity(), 20.0, conversionModel));
-    // At this point, we have to wait for the emergency stop event. This can take some time as the
-    // boiler will have to empty. With max 500L at 20L/s, that requires a conservative worst-case of
-    // 25s.
-    clockUntil(25, controller, model, atleast(MODE_emergencystop));
+        new SteamBoilerModels.ValveStuck(true, config.getCapacity(), 20.0, conversionModel, model));
+    // At this point, we should move into rescue mode. This can take some time as
+    clockUntil(10, controller, model, atleast(MODE_rescue));
   }
 
   /**
@@ -291,6 +289,9 @@ public class SafetyTests {
     // Under ideal conditions, should get here without problems. Now, break both level and steam
     // sensor.
     model.setLevelSensor(new LevelSensorModels.StuckNegativeOne(model));
+    // Continue clocking the system. It should continue working.
+    clockForWithout(120, controller, model, atleast(MODE_emergencystop));
+    // Finally, break the steam sensor at which point it should emergency stop.
     model.setSteamSensor(new SteamSensorModels.StuckNegativeOne(model));
     // We should now immediately enter emergency stop!
     clockOnceExpecting(controller, model, atleast(MODE_emergencystop));

@@ -224,7 +224,7 @@ public class MySteamBoilerController implements SteamBoilerController {
         // outgoing.send(new Message(MessageKind.MODE_m, Mailbox.Mode.RESCUE));
         break;
       default:
-        assert false;
+        break;
     }
 
     // Check in next cycle we aren't going to go past a limit
@@ -254,7 +254,7 @@ public class MySteamBoilerController implements SteamBoilerController {
         outgoing.send(new Message(MessageKind.MODE_m, Mailbox.Mode.RESCUE));
         break;
       default:
-        assert false;
+        break;
     }
 
     this.lastSteam = steamMessage.getDoubleParameter();
