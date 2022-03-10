@@ -278,7 +278,7 @@ public class SafetyTests {
    * different reason.
    */
   @Test
-  public void safetytest_11() {
+  public void safetytest_11() { 
     SteamBoilerCharacteristics config = this.defaultConfig;
     MySteamBoilerController controller = new MySteamBoilerController(config);
     PhysicalUnits model = new PhysicalUnits.Template(config).construct();
@@ -295,7 +295,7 @@ public class SafetyTests {
     model.setSteamSensor(new SteamSensorModels.StuckNegativeOne(model));
     // We should now immediately enter emergency stop!
     clockOnceExpecting(controller, model, atleast(MODE_emergencystop));
-  }
+  } //causes pump at half
 
 
   /**

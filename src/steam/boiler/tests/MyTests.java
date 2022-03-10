@@ -125,12 +125,14 @@ public class MyTests {
 		    assertTrue(model.getBoiler().getWaterLevel() <= config.getMaximalNormalLevel());
 		    assertTrue(model.getBoiler().getWaterLevel() >= config.getMinimalNormalLevel());
 		    
-		    model.setPump(0, new PumpModels.StuckClosed(0, 0.0, model));
+		    int id = 0;
+		    model.setPump(id, new PumpModels.StuckClosed(id, 0.0, model));
 		    
 		    clockUntil(60, controller, model, atleast(MODE_degraded));
+		    clockOnceExpecting(controller, model, atleast(MODE_degraded));
+		    model.setPumpStatus(id, PhysicalUnits.ComponentStatus.REPAIRED);
+		    model.setPump(id, new PumpModels.Ideal(id, config.getPumpCapacity(id), model));
 		    
-		    model.setPump(0, new PumpModels.Ideal(0, config.getPumpCapacity(0), model));
-		    model.setPumpStatus(0, PhysicalUnits.ComponentStatus.REPAIRED);
 		    
 		    clockOnceExpecting( controller, model, atleast(MODE_normal));
 		    
@@ -156,9 +158,10 @@ public class MyTests {
 		    clockUntil(60, controller, model, atleast(MODE_degraded));
 		    
 		    //System.out.println(model.getControllerStatus(id).toString());
-		    
-		    model.setPump(id, new PumpModels.Ideal(id, config.getPumpCapacity(0), model));
+		    clockOnceExpecting(controller, model, atleast(MODE_degraded));
 		    model.setPumpStatus(id, PhysicalUnits.ComponentStatus.REPAIRED);
+		    model.setPump(id, new PumpModels.Ideal(id, config.getPumpCapacity(0), model));
+		    
 		    
 		    clockOnceExpecting( controller, model, atleast(MODE_normal));
 		    
@@ -223,13 +226,14 @@ public class MyTests {
 	    // wrong during this time.
 	    clockForWithout(240, controller, model, atleast(MODE_emergencystop));
 	    // Now, break the level sensor in an obvious fashion.
-	   model.setPump(0, new PumpModels.TxFailure(false, 0, 4, model));
+	    int id = 0;
+	   model.setPump(id, new PumpModels.TxFailure(false, id, 4, model));
 	   //System.out.println("break");
 	    //
 	    clockOnceExpecting(controller, model, atleast(MODE_degraded));
 	    clockForWithout(60, controller, model, atleast(MODE_emergencystop));
-	    model.setPump(0, new PumpModels.Ideal(0, 4, model));
-	    model.setPumpStatus(0, PhysicalUnits.ComponentStatus.REPAIRED);
+	    model.setPump(id, new PumpModels.Ideal(id, 4, model));
+	    model.setPumpStatus(id, PhysicalUnits.ComponentStatus.REPAIRED);
 	    
 	    clockOnceExpecting(controller, model, atleast(MODE_normal));
 	  }
@@ -249,13 +253,14 @@ public class MyTests {
 	    // wrong during this time.
 	    clockForWithout(240, controller, model, atleast(MODE_emergencystop));
 	    // Now, break the level sensor in an obvious fashion.
-	    model.setPump(3, new PumpModels.TxFailure(true, 3, 4, model));
+	    int id = 3;
+	    model.setPump(id, new PumpModels.TxFailure(true, id, 4, model));
 	   // System.out.println("break");
 	    //
 	    clockOnceExpecting(controller, model, atleast(MODE_degraded));
 	    clockForWithout(60, controller, model, atleast(MODE_emergencystop));
-	    model.setPump(3, new PumpModels.Ideal(3, 4, model));
-	    model.setPumpStatus(3, PhysicalUnits.ComponentStatus.REPAIRED);
+	    model.setPump(id, new PumpModels.Ideal(id, 4, model));
+	    model.setPumpStatus(id, PhysicalUnits.ComponentStatus.REPAIRED);
 	    
 	    clockOnceExpecting(controller, model, atleast(MODE_normal));
 	  }
