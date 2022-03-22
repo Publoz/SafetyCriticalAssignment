@@ -106,9 +106,15 @@ public class MyTests {
 	    assertTrue(model.getBoiler().getWaterLevel() <= config.getMaximalNormalLevel());
 	    assertTrue(model.getBoiler().getWaterLevel() >= config.getMinimalNormalLevel());
 	    
+	    clockForWithout(95, controller, model, atleast(MODE_emergencystop)); //at 90 it doesnt work
 	    model.setPump(0, new PumpModels.ReducedHalf(0, config.getPumpCapacity(0)/2, model));
 	   
 	    clockUntil(60, controller, model, atleast(MODE_degraded));
+	    assertTrue(model.getBoiler().getWaterLevel() <= config.getMaximalLimitLevel());
+      assertTrue(model.getBoiler().getWaterLevel() >= config.getMinimalLimitLevel());
+	    clockForWithout(120, controller, model, atleast(MODE_emergencystop));
+	    assertTrue(model.getBoiler().getWaterLevel() <= config.getMaximalLimitLevel());
+      assertTrue(model.getBoiler().getWaterLevel() >= config.getMinimalLimitLevel());
 	    
 	  }
 	  
@@ -167,6 +173,45 @@ public class MyTests {
 		    
 		  }
 	  
+	  @Test
+    public void test_2pumpsLockedOn() {
+        SteamBoilerCharacteristics config = SteamBoilerCharacteristics.DEFAULT;
+        MySteamBoilerController controller = new MySteamBoilerController(config);
+        PhysicalUnits model = new PhysicalUnits.Template(config).construct();
+        // Wait at most 60s for controller to get to READY state
+        model.setMode(PhysicalUnits.Mode.WAITING);
+        int id = 3;
+        clockUntil(90, controller, model, atleast(PROGRAM_READY));
+        // At this point, level should be within normal bounds
+        assertTrue(model.getBoiler().getWaterLevel() <= config.getMaximalNormalLevel());
+        assertTrue(model.getBoiler().getWaterLevel() >= config.getMinimalNormalLevel());
+        
+        model.setPump(id, new PumpModels.SticksOpen(id, 4, model));
+        model.getPump(id).open();
+        id = 2;
+        clockUntil(60, controller, model, atleast(MODE_degraded));
+        model.setPump(id, new PumpModels.SticksOpen(id, 4, model));
+        model.getPump(id).open();
+        
+       
+        id = 3;
+        //System.out.println(model.getControllerStatus(id).toString());
+        clockOnceExpecting(controller, model, atleast(MODE_degraded));
+        model.setPumpStatus(id, PhysicalUnits.ComponentStatus.REPAIRED);
+        model.setPump(id, new PumpModels.Ideal(id, config.getPumpCapacity(0), model));
+        clockOnceExpecting(controller, model, atleast(MODE_degraded));
+        id = 2;
+        model.setPumpStatus(id, PhysicalUnits.ComponentStatus.REPAIRED);
+        model.setPump(id, new PumpModels.Ideal(id, config.getPumpCapacity(0), model));
+        
+        assertTrue(model.getBoiler().getWaterLevel() <= config.getMaximalNormalLevel());
+        assertTrue(model.getBoiler().getWaterLevel() >= config.getMinimalNormalLevel());
+        
+        clockOnceExpecting( controller, model, atleast(MODE_normal));
+        
+      }
+    
+	  
 	  
 	  /**
 	   * Check controller enters degraded mode after obvious level sensor failure. This has to be done
@@ -191,6 +236,72 @@ public class MyTests {
 	    model.setLevelSensor(new LevelSensorModels.Ideal(model));
 	    clockOnceExpecting(controller, model, atleast(MODE_normal));
 	  }
+	  
+	  @Test
+    public void test_rescue_mode_neg_offset_normal() {
+      SteamBoilerCharacteristics config = SteamBoilerCharacteristics.DEFAULT;
+      MySteamBoilerController controller = new MySteamBoilerController(config);
+      PhysicalUnits model = new PhysicalUnits.Template(config).construct();
+      model.setMode(PhysicalUnits.Mode.WAITING);
+      // Clock system for a given amount of time. We're not expecting anything to go
+      // wrong during this time.
+      clockForWithout(240, controller, model, atleast(MODE_emergencystop));
+      // Now, break the level sensor in an obvious fashion.
+      model.setLevelSensor(new LevelSensorModels.OffsetNegativeTen(model));
+      //
+      clockOnceExpecting(controller, model, atleast(MODE_rescue, LEVEL_FAILURE_DETECTION));
+      clockForWithout(60, controller, model, atleast(MODE_emergencystop));
+      model.setLevelSensorStatus(PhysicalUnits.ComponentStatus.REPAIRED);
+      model.setLevelSensor(new LevelSensorModels.Ideal(model));
+      clockOnceExpecting(controller, model, atleast(MODE_normal));
+    }
+	  
+	  @Test
+    public void test_rescue_mode_pos_offset_normal() {
+      SteamBoilerCharacteristics config = SteamBoilerCharacteristics.DEFAULT;
+      MySteamBoilerController controller = new MySteamBoilerController(config);
+      PhysicalUnits model = new PhysicalUnits.Template(config).construct();
+      model.setMode(PhysicalUnits.Mode.WAITING);
+      // Clock system for a given amount of time. We're not expecting anything to go
+      // wrong during this time.
+      clockForWithout(240, controller, model, atleast(MODE_emergencystop));
+      // Now, break the level sensor in an obvious fashion.
+      model.setLevelSensor(new LevelSensorModels.OffsetTen(model));
+      //
+      clockOnceExpecting(controller, model, atleast(MODE_rescue, LEVEL_FAILURE_DETECTION));
+      clockForWithout(60, controller, model, atleast(MODE_emergencystop));
+      model.setLevelSensorStatus(PhysicalUnits.ComponentStatus.REPAIRED);
+      model.setLevelSensor(new LevelSensorModels.Ideal(model));
+      clockOnceExpecting(controller, model, atleast(MODE_normal));
+    }
+	  
+	  @Test
+    public void test_rescue_mode_pos_offset_pumpFail_normal() {
+      SteamBoilerCharacteristics config = SteamBoilerCharacteristics.DEFAULT;
+      MySteamBoilerController controller = new MySteamBoilerController(config);
+      PhysicalUnits model = new PhysicalUnits.Template(config).construct();
+      model.setMode(PhysicalUnits.Mode.WAITING);
+      // Clock system for a given amount of time. We're not expecting anything to go
+      // wrong during this time.
+      clockForWithout(240, controller, model, atleast(MODE_emergencystop));
+      // Now, break the level sensor in an obvious fashion.
+      model.setLevelSensor(new LevelSensorModels.OffsetTen(model));
+      //
+      clockOnceExpecting(controller, model, atleast(MODE_rescue, LEVEL_FAILURE_DETECTION));
+      clockForWithout(60, controller, model, atleast(MODE_emergencystop));
+      int id = 2;
+      model.setPump(id, new PumpModels.SticksOpen(id, 4, model));
+      model.getPump(id).open();
+      clockForWithout(60, controller, model, atleast(MODE_emergencystop));
+      assertTrue(model.getBoiler().getWaterLevel() <= config.getMaximalNormalLevel());
+      assertTrue(model.getBoiler().getWaterLevel() >= config.getMinimalNormalLevel());
+      model.setLevelSensorStatus(PhysicalUnits.ComponentStatus.REPAIRED);
+      model.setLevelSensor(new LevelSensorModels.Ideal(model));
+      clockForWithout(60, controller, model, atleast(MODE_emergencystop));
+      model.setPumpStatus(id, PhysicalUnits.ComponentStatus.REPAIRED);
+      model.setPump(id, new PumpModels.Ideal(id, config.getPumpCapacity(0), model));
+      clockOnceExpecting(controller, model, atleast(MODE_normal));
+    }
 	  
 	  
 	  @Test
@@ -331,6 +442,76 @@ public class MyTests {
       clockForWithout(240, controller, model, atleast(MODE_emergencystop));
       
     }
+    
+//    /**
+//     * See that we detect pump 0 is telling us wrong info and locked closed
+//     * then go back to normal once fixed
+//     * Goes down branch 1 of checkPumps //too complicated / not going to wrok
+//     */
+//    @Test
+//    public void test_pump_valveStuckOpen_thenFixed() {
+//      SteamBoilerCharacteristics config = SteamBoilerCharacteristics.DEFAULT;
+//      //config.setEvacuationRate(7);
+//      MySteamBoilerController controller = new MySteamBoilerController(config);
+//      PhysicalUnits model = new PhysicalUnits.Template(config).construct();
+//      model.setMode(PhysicalUnits.Mode.WAITING);
+//      // Clock system for a given amount of time. We're not expecting anything to go
+//      // wrong during this time.
+//      int id = 0;
+//      clockForWithout(240, controller, model, atleast(MODE_emergencystop));
+//      // Break pump
+//      Function<Integer, Double> conversionModel = (Integer elapsed) -> {
+//        Double d = Double.valueOf(SteamBoilerModels.linearSteamConversionModel(elapsed.intValue(),
+//            60000, config.getMaximualSteamRate()));
+//        assert d != null;
+//        return d;
+//      };
+//      model.setBoiler(
+//          new SteamBoilerModels.ValveStuck(true, config.getCapacity(), 5, conversionModel, model));
+//     // System.out.println("break");
+//     //
+//      //
+//      clockUntil(10, controller, model, atleast(MODE_degraded));
+//     
+//      //System.out.println(controller.)
+//      clockForWithout(260, controller, model, atleast(MODE_emergencystop));
+//      model.setBoiler(
+//          new SteamBoilerModels.ValveStuckClosed(0, 0, conversionModel, model));
+//      System.out.println("It should be back");
+//      clockForWithout(90, controller, model, atleast(MODE_emergencystop));
+//      assertTrue(model.getBoiler().getWaterLevel() <= config.getMaximalNormalLevel());
+//      assertTrue(model.getBoiler().getWaterLevel() >= config.getMinimalNormalLevel());
+//      
+//      clockOnceExpecting(controller, model, atleast(MODE_normal));
+//      
+//    }
+    
+    
+    @Test
+    public void valveBrokeInitiailly() {
+      SteamBoilerCharacteristics config = SteamBoilerCharacteristics.DEFAULT;
+      MySteamBoilerController controller = new MySteamBoilerController(config);
+      PhysicalUnits model = new PhysicalUnits.Template(config).construct();
+      model.getBoiler().pumpInWater(350);
+      
+      Function<Integer, Double> conversionModel = (Integer elapsed) -> {
+        Double d = Double.valueOf(SteamBoilerModels.linearSteamConversionModel(elapsed.intValue(),
+            60000, config.getMaximualSteamRate()));
+        assert d != null;
+        return d;
+      };
+      model.setBoiler(
+          new SteamBoilerModels.ValveStuckClosed(0, 0, conversionModel, model));
+      
+      model.setMode(PhysicalUnits.Mode.WAITING);
+      // Break steam sensor
+      
+      // FIRST
+      clockUntil(10, controller, model, atleast(MODE_emergencystop));
+      // DONE
+    }
+    
+    
     
     @Test
     public void range() {

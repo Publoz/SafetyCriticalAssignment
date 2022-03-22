@@ -107,6 +107,8 @@ public class MySteamBoilerController implements SteamBoilerController {
    */
   private boolean lastRescue = false;
   
+  
+  
   /**
    * Was the valve broken on last cycle
    */
@@ -124,6 +126,8 @@ public class MySteamBoilerController implements SteamBoilerController {
 
   private boolean test = false;
 
+  
+  private int nummy = -1;
   /**
    * To keep track of whether the valve is currently open.
    */
@@ -157,6 +161,8 @@ public class MySteamBoilerController implements SteamBoilerController {
     }
     
     this.pumpsToCheck = new int[this.configuration.getNumberOfPumps()+1];
+    
+    
 
   }
 
@@ -240,19 +246,33 @@ public class MySteamBoilerController implements SteamBoilerController {
       if(levelMessage.getDoubleParameter() < this.expectedRange[0]) {
         int index = IntStream.range(0, this.pumpsToCheck.length).filter(
             i -> this.pumpsToCheck[i] == 2).findFirst().orElse(-1);
-        this.brokenParts[index-1] = 3;
+        this.brokenParts[3+(index-1)] = 3;
         //assert this.mode == State.DEGRADED;
         this.expectedRange[0] = levelMessage.getDoubleParameter() - 0.3;
         this.pumpsToCheck[0] = 0;
         System.out.println("Pump at half is " + (index-1));
+        this.pumpsState[(index-1)] = false;
+        outgoing.send(new Message(MessageKind.CLOSE_PUMP_n, (index-1)));
         this.mode = State.DEGRADED;
       } else {
+        int count = 0;
         for(int i = 1; i < this.pumpsToCheck.length; i++) {
           if(this.pumpsToCheck[i] == 2) {
             this.pumpsToCheck[i] = 3;
+            count++;
+          } else if(this.pumpsToCheck[i] == 3 ||this.pumpsToCheck[i] == 0 ) {
+            count++;
           }
         }
+        if(count == this.configuration.getNumberOfPumps()) {
+          this.pumpsToCheck[0] = 0;
+          assert this.mode == State.RESCUE;
+        }
       }
+    }
+    
+    if(brokenParts[0] != 0) {
+      checkValveBack(levelMessage);
     }
 
     if (this.mode != State.WAITING && this.mode != State.READY) {
@@ -325,8 +345,32 @@ public class MySteamBoilerController implements SteamBoilerController {
 
     this.lastSteam = steamMessage.getDoubleParameter();
     this.lastWater = levelMessage.getDoubleParameter();
+   // checkCorrect(outgoing);
     // NOTE: this is an example message send to illustrate the syntax
     // outgoing.send(new Message(MessageKind.MODE_m, Mailbox.Mode.INITIALISATION));
+  }
+  
+  
+  /**
+   * @param outgoing
+   */
+  private void checkCorrect(Mailbox outgoing) {
+    
+    int on = 0;
+    for(int i = 0; i < outgoing.size(); i++) {
+      Message m = outgoing.read(i);
+      if(m.getKind() == MessageKind.CLOSE_PUMP_n) {
+        System.out.println(m.getIntegerParameter());
+        assert pumpsState[m.getIntegerParameter()] == false;
+        
+      } else if(m.getKind() == MessageKind.OPEN_PUMP_n) {
+        System.out.println(m.getIntegerParameter());
+        assert pumpsState[m.getIntegerParameter()] == true;
+        on++;
+      }
+    }
+    on += pumpsLockedOn();
+   // assert on == nummy;
   }
 
   /**
@@ -360,7 +404,7 @@ public class MySteamBoilerController implements SteamBoilerController {
         - this.configuration.getPumpCapacity(0) < this.configuration.getMinimalLimitLevel())
         | (this.mode != State.RESCUE && levelMessage.getDoubleParameter() 
         + this.configuration.getPumpCapacity(0) > this.configuration.getMaximalLimitLevel())) {
-      emergencyMode(outgoing);
+        emergencyMode(outgoing);
     }
 
   }
@@ -384,7 +428,7 @@ public class MySteamBoilerController implements SteamBoilerController {
           this.brokenParts[2] = 12;
         
         } else {
-          System.out.println("false ack of Level" + brokenParts[2]);
+         // System.out.println("false ack of Level" + brokenParts[2]);
         }
       } else if (acks[i].getKind() == MessageKind.STEAM_OUTCOME_FAILURE_ACKNOWLEDGEMENT) {
         if (brokenParts[1] == 1) {
@@ -403,7 +447,7 @@ public class MySteamBoilerController implements SteamBoilerController {
         int val = brokenParts[3 + acks[i].getIntegerParameter()];
         if (val == 1 || val == 2 || val == 3 || val == 4) {
           brokenParts[3 + acks[i].getIntegerParameter()] = val + 10;
-          System.out.println(acks[i].getIntegerParameter());
+          //System.out.println(acks[i].getIntegerParameter());
         } else {
           if (val < 10) {
             System.out.println("false ack of Pump " + acks[i].getIntegerParameter());
@@ -412,6 +456,18 @@ public class MySteamBoilerController implements SteamBoilerController {
         }
       }
     }
+  }
+  
+  /**
+   * Check if the valve is back working
+   * @param levelMessage
+   */
+  private void checkValveBack(Message levelMessage) {
+    if(withinRange(levelMessage.getDoubleParameter() - (this.configuration.getEvacuationRate()*4),
+        this.lastWater)) {
+      this.brokenParts[0] = 0;
+      selectMode();
+    } 
   }
 
   /**
@@ -550,15 +606,35 @@ public class MySteamBoilerController implements SteamBoilerController {
         System.out.println("VALVE Broken");
        
         if(this.brokenParts[0] == 0) {
-          this.expectedRange[0] = this.expectedRange[0] - (this.configuration.getEvacuationRate()*5);
+          
+          int on = 0;
+         for(int i = 0; i < pumpsState.length; i++) {
+           if(pumpsState[i] == true) {
+             on++;
+           }
+         }
+         int multiplier = 1;
+         if(on == 2) {
+           multiplier = 2;
+         }
+         
+         this.expectedRange[0] = level.getDoubleParameter();//this.expectedRange[0] - (this.configuration.getEvacuationRate()*5*multiplier);
               
-          this.expectedRange[1] = this.expectedRange[1] - (this.configuration.getEvacuationRate()*5);
+          this.expectedRange[1] = level.getDoubleParameter();//this.expectedRange[1] - (this.configuration.getEvacuationRate()*5*multiplier);
           this.valveBrokeLast = true;
+          //
+           System.out.println(expectedRange[0]);
+           System.out.println(level.getDoubleParameter());
+           System.out.println(expectedRange[1]);
+           assert waterLevelNormal(level.getDoubleParameter());
         } else if(this.valveBrokeLast) {
           this.valveBrokeLast = false;
-          this.expectedRange[0] = this.expectedRange[0] - 5;
-          
-          this.expectedRange[1] = this.expectedRange[1] - 5;
+         // this.expectedRange[0] = this.expectedRange[0] - 5;
+          this.expectedRange[0] = level.getDoubleParameter();
+          this.expectedRange[1] = level.getDoubleParameter();
+          //this.expectedRange[1] = this.expectedRange[1] - 5;
+          assert waterLevelNormal(level.getDoubleParameter());
+          this.lastRescue = false;
         }
         this.brokenParts[0] = 1;
 
@@ -570,10 +646,11 @@ public class MySteamBoilerController implements SteamBoilerController {
           //TODO IMPLEMENT
           int num = countPumpsOn();
           if(level.getDoubleParameter() > this.lastWater - (num-1) * this.configuration.getPumpCapacity(0)
-              && this.brokenParts[0] == 0 && this.brokenParts[2] != 2) {
+              && this.brokenParts[0] == 0 && this.brokenParts[2] != 2 && this.brokenParts[2] != 12) {
             System.out.println("Pump at half");
             this.expectedRange[0] -= (this.expectedRange[0] - level.getDoubleParameter() ) - 0.1;
             this.expectedRange[1] -= (this.expectedRange[0] - level.getDoubleParameter()) - 0.1;
+            this.lastRescue = false;
            
            // System.out.println(expectedRange[0]);
           //  System.out.println(level.getDoubleParameter());
@@ -591,7 +668,7 @@ public class MySteamBoilerController implements SteamBoilerController {
         
         
       }
-      this.lastRescue = false;
+      
     }
     
     double steamVal = steam.getDoubleParameter();
@@ -810,14 +887,14 @@ public class MySteamBoilerController implements SteamBoilerController {
     
     
     
-    if(pumpsToCheck[0] == 1) {
+    if(this.pumpsToCheck[0] == 1) {
       checkPump(level, steam, outgoing);
       return;
     }
     
     int num = calcPumps(level, steam);
-    // System.out.println("We think " + num);
-   // System.out.println(num);
+    
+  
     
     int on = 0;
     for (int i = 0; i < this.configuration.getNumberOfPumps(); i++) { // find out how many locked on
@@ -847,9 +924,17 @@ public class MySteamBoilerController implements SteamBoilerController {
         if (pumpStatus == 0 || pumpStatus == 4 || pumpStatus == 14) {
           outgoing.send(new Message(MessageKind.OPEN_PUMP_n, i));
           this.pumpsState[i] = true;
+          //pumpsGoingOn[i] = true;
           on++;
         }
       }
+      
+      
+      if(on != num) {
+        this.expectedRange[0] = on * this.configuration.getPumpCapacity(0) - 0.3;    
+        System.out.println("Altering range");
+      }
+      
     } else {
       for (int i = 0; i < this.configuration.getNumberOfPumps(); i++) {
         if (this.brokenParts[3 + i] == 0) {
@@ -860,6 +945,8 @@ public class MySteamBoilerController implements SteamBoilerController {
     }
 
   }
+  
+  
   
   /**
    * Check if a pump is running at less than capacity
@@ -999,10 +1086,18 @@ public class MySteamBoilerController implements SteamBoilerController {
       double max = 0;
       double min = 0;
       if (this.mode != State.RESCUE) {
+        
+       
         max = level.getDoubleParameter() + shift + (5 * this.configuration.getPumpCapacity(0) * (i))
             - (5 * steam.getDoubleParameter());
         min = level.getDoubleParameter() + shift + (5 * this.configuration.getPumpCapacity(0) * (i))
             - (5 * this.configuration.getMaximualSteamRate());
+        
+        if(this.mode == State.DEGRADED) {
+         // System.out.println("loop " + i);
+         // System.out.println(max);
+        //  System.out.println(min);
+        }
       } else {
         // If in rescue mode we can't use the level so estimate based on what the
         // current max
@@ -1024,6 +1119,11 @@ public class MySteamBoilerController implements SteamBoilerController {
      //System.out.println(expectedRange[0]);
      //System.out.println(expectedRange[1]);
 
+    if(brokenParts[3] != 0) {
+      System.out.println("Best " + bestNum);
+    }
+    
+    nummy = bestNum;
     return bestNum;
   }
 
@@ -1073,10 +1173,13 @@ public class MySteamBoilerController implements SteamBoilerController {
     if (extractAllMatches(MessageKind.STEAM_BOILER_WAITING, incoming).length != 1) {
       return;
     }
+    
+    
 
     Message levelMessage = extractOnlyMatch(MessageKind.LEVEL_v, incoming);
     Message steamMessage = extractOnlyMatch(MessageKind.STEAM_v, incoming);
-    if (levelMessage == null || steamMessage == null) {
+    if (levelMessage == null || steamMessage == null 
+        || (valveOpen && levelMessage.getDoubleParameter() == lastWater)) {
       emergencyMode(outgoing);
     } else if (steamMessage.getDoubleParameter() != 0) {
       emergencyMode(outgoing);
