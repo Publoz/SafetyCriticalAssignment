@@ -464,9 +464,7 @@ public class MyTests {
 	  
 	  
 	  /**
-     * See that we detect pump 0 is telling us wrong info and locked closed
-     * then go back to normal once fixed
-     * Goes down branch 1 of checkPumps
+	   * 
      */
     @Test
     public void test_pump_valveStuckOpen() {
@@ -479,6 +477,39 @@ public class MyTests {
       // wrong during this time.
       int id = 0;
       clockForWithout(240, controller, model, atleast(MODE_emergencystop));
+      // Break pump
+      Function<Integer, Double> conversionModel = (Integer elapsed) -> {
+        Double d = Double.valueOf(SteamBoilerModels.linearSteamConversionModel(elapsed.intValue(),
+            60000, config.getMaximualSteamRate()));
+        assert d != null;
+        return d;
+      };
+      model.setBoiler(
+          new SteamBoilerModels.ValveStuck(true, config.getCapacity(), 5, conversionModel, model));
+     // System.out.println("break");
+     //
+      //
+      clockUntil(10, controller, model, atleast(MODE_degraded));
+     
+      //System.out.println(controller.)
+      clockForWithout(240, controller, model, atleast(MODE_emergencystop));
+      
+    }
+    
+    /**
+     * 
+     */
+    @Test
+    public void test_pump_valveStuckOpen2() {
+      SteamBoilerCharacteristics config = SteamBoilerCharacteristics.DEFAULT;
+      //config.setEvacuationRate(7);
+      MySteamBoilerController controller = new MySteamBoilerController(config);
+      PhysicalUnits model = new PhysicalUnits.Template(config).construct();
+      model.setMode(PhysicalUnits.Mode.WAITING);
+      // Clock system for a given amount of time. We're not expecting anything to go
+      // wrong during this time.
+      int id = 0;
+      clockForWithout(235, controller, model, atleast(MODE_emergencystop));
       // Break pump
       Function<Integer, Double> conversionModel = (Integer elapsed) -> {
         Double d = Double.valueOf(SteamBoilerModels.linearSteamConversionModel(elapsed.intValue(),

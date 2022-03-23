@@ -166,8 +166,6 @@ public class MySteamBoilerController implements SteamBoilerController {
     
     this.pumpsToCheck = new int[this.configuration.getNumberOfPumps() + 1];
     
-    
-
   }
 
   /**
@@ -434,10 +432,11 @@ public class MySteamBoilerController implements SteamBoilerController {
    * @param levelMessage the water level message
    */
   private void checkValveBack(Message levelMessage) {
-    if (withinRange(levelMessage.getDoubleParameter() - (this.configuration.getEvacuationRate() 
-        * 4),
-        this.lastWater)) {
+    if (withinRange(this.expectedRange[1] + (this.configuration.getEvacuationRate() * 5),
+        levelMessage.getDoubleParameter())) {
       this.brokenParts[0] = 0;
+      this.expectedRange[0] = levelMessage.getDoubleParameter();
+      this.expectedRange[1] = levelMessage.getDoubleParameter();
       selectMode();
     } 
   }
@@ -1182,7 +1181,7 @@ public class MySteamBoilerController implements SteamBoilerController {
    * @return a boolean if in range
    */
   public static boolean withinRange(double number, double target) {
-    if (target - 0.3 < number && target + 0.3 > number) {
+    if (target - 0.32 < number && target + 0.32 > number) {
       return true;
     }
     return false;
