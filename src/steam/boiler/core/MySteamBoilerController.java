@@ -189,7 +189,10 @@ public class MySteamBoilerController implements SteamBoilerController {
    * the set of incoming messages from the physical units and producing a set of
    * output messages which are sent back to them.
    * 
-   * <p>The set of processes done each cycle is determined by the field
+   * <p>Firstly we need to check for any transmission failures.
+   * Then we carry out our error detection.
+   * Finally we determine what to do this cycle.
+   * The set of processes done each cycle is determined by the field
    * mode
    *
    * @param incoming The set of incoming messages from the physical units.
@@ -282,21 +285,18 @@ public class MySteamBoilerController implements SteamBoilerController {
    * @param outgoing the outgoing mailbox
    */
   private void sendStateMessage(Mailbox outgoing) {
+    assert outgoing != null;
     switch (this.mode) {
       case WAITING:
-        // doWaiting(incoming, outgoing);
         outgoing.send(new Message(MessageKind.MODE_m, Mailbox.Mode.INITIALISATION));
         break;
       case READY:
         outgoing.send(new Message(MessageKind.MODE_m, Mailbox.Mode.INITIALISATION));
-        // doReady(incoming, outgoing);
         break;
       case NORMAL:
-        // doNormal(incoming, outgoing);
         outgoing.send(new Message(MessageKind.MODE_m, Mailbox.Mode.NORMAL));
         break;
       case DEGRADED:
-        // doDegraded(incoming, outgoing);
         outgoing.send(new Message(MessageKind.MODE_m, Mailbox.Mode.DEGRADED));
         break;
       case RESCUE:
@@ -317,6 +317,7 @@ public class MySteamBoilerController implements SteamBoilerController {
    * <p>If the water is less than expected when just this pump was on
    * then it must not be working correctly.
    * Otherwise check the next pump.
+   * This is a risky strategy as the water level might drop significantly.
 
    * @param levelMessage the water level message
    * @param outgoing the outgoing mailbox
@@ -360,8 +361,7 @@ public class MySteamBoilerController implements SteamBoilerController {
    * 
    * <p>Firstly check special case in rescue mode where
    * the water level is dropping or rising based on pumps
-   * in a locked state - if eventually going to overflow then stop
-   * 
+   * in a 'locked' state - if eventually going to overflow, then stop
    * Otherwise If expected range lies outside the max or min of allowed
    * level then go to emergency mode. Alternatively, 
    * if we are one pump's worth away from limit
@@ -373,13 +373,15 @@ public class MySteamBoilerController implements SteamBoilerController {
    */
   private void checkLimitLevels(Message levelMessage, Message steamMessage, Mailbox outgoing) {
     
-    if(this.mode == State.RESCUE) {
+    if (this.mode == State.RESCUE) {
       int working = this.configuration.getNumberOfPumps() - pumpsLockedOff();
-      if(working * (this.configuration.getPumpCapacity(0) * 5) < steamMessage.getDoubleParameter() * 5) {
+      if (working * (this.configuration.getPumpCapacity(0) * 5) 
+          < steamMessage.getDoubleParameter() * 5) {
         emergencyMode(outgoing);
       } 
       working = pumpsLockedOn();
-      if(working * (this.configuration.getPumpCapacity(0) * 5) > steamMessage.getDoubleParameter() * 5) {
+      if (working * (this.configuration.getPumpCapacity(0) * 5) 
+          > steamMessage.getDoubleParameter() * 5) {
         emergencyMode(outgoing);
       }
 
@@ -426,9 +428,7 @@ public class MySteamBoilerController implements SteamBoilerController {
       } else if (acks[i].getKind() == MessageKind.STEAM_OUTCOME_FAILURE_ACKNOWLEDGEMENT) {
         if (this.brokenParts[1] == 1) {
           this.brokenParts[1] = 11;
-        } else { //TODO FIX false ack of steam
-          System.out.println("false ack of Steam"); //$NON-NLS-1$
-        }
+        } 
       } else if (acks[i].getKind() == MessageKind.PUMP_CONTROL_FAILURE_ACKNOWLEDGEMENT_n) {
         if (this.brokenParts[3 + this.configuration.getNumberOfPumps()
             + acks[i].getIntegerParameter()] == 1) {
@@ -448,6 +448,9 @@ public class MySteamBoilerController implements SteamBoilerController {
   
   /**
    * Check if the valve is back working.
+   * 
+   * <p>This assumes that the valve is fixed exactly when a cycle occurs 
+   * and the evacuation rate is consistent.
 
    * @param levelMessage the water level message
    */
@@ -537,7 +540,7 @@ public class MySteamBoilerController implements SteamBoilerController {
    * Check whether we have encountered any failures.
    *
    * <p>Firstly if we had a control or rescue failure last cycle, conclude what
-   * the real cause was by calling check responding method
+   * the real cause was by calling check... responding method
    * Then check for any obvious steam detecting failures. Then check each pump
    * for errors by calling checkPumps(). If we haven't found any issues then
    * finally check the water level sensor. 
@@ -554,7 +557,7 @@ public class MySteamBoilerController implements SteamBoilerController {
       Mailbox outgoing) {
      
     if (this.controlFailure) {
-      if(this.mode == State.RESCUE) {
+      if (this.mode == State.RESCUE) {
         emergencyMode(outgoing);
         return;
       }
@@ -584,7 +587,7 @@ public class MySteamBoilerController implements SteamBoilerController {
       assert pump != null && control != null;
       int result = checkPumps(pump, control, level.getDoubleParameter(), i);
       if (result != 0) {
-        if(this.mode != State.RESCUE) {
+        if (this.mode != State.RESCUE) {
           this.mode = State.DEGRADED;
         }
         if (result == 1) {
@@ -603,7 +606,7 @@ public class MySteamBoilerController implements SteamBoilerController {
           if (this.brokenParts[2] == 0) {
             if ((level.getDoubleParameter() > this.configuration.getMaximalLimitLevel()
                 || level.getDoubleParameter() < this.configuration.getMinimalLimitLevel())) {
-              this.brokenParts[2] = 2; //clear break
+              this.brokenParts[2] = 2; //signifies clear break
             } else {
               this.brokenParts[2] = 1;
             }
@@ -618,11 +621,16 @@ public class MySteamBoilerController implements SteamBoilerController {
   /**
    * If the last cycle had a control failure, then we need
    * to check if it was a control or pump issue.
+   * 
+   * <p>If the level is less than the expected range, pump locked off
+   * If the level is higher, then locked on.
+   * Otherwise controller failure
 
    * @param level the water level message
    * @param outgoing the outgoing mailbox
    */
   private void checkControlFailure(Message level, Mailbox outgoing) {
+    assert this.pumpFailed != -1;
     if (level.getDoubleParameter() < this.expectedRange[0]) {
       outgoing.send(new Message(MessageKind.PUMP_FAILURE_DETECTION_n, this.pumpFailed));
       this.brokenParts[3 + this.pumpFailed] = 2;
@@ -642,6 +650,12 @@ public class MySteamBoilerController implements SteamBoilerController {
   /**
    * If the last cycle was rescue we need to check if a pump is at half,
    * the valve is broken or it really was a level sensor issue.
+   * 
+   * <p>Firstly check if the valve is locked open. We need to update
+   * the expected range accordingly in this case
+   * Then we check if we suspect a pump is at half.
+   * If so the next couple of cycles we will call checkPump()
+   * to actually find out.
 
    * @param level the water level message
    * @param steam the steam level message
@@ -721,6 +735,11 @@ public class MySteamBoilerController implements SteamBoilerController {
 
   /**
    * Check if a given pump and controller is working correctly.
+   * 
+   * <p>We are checking against the different combinations that could happen
+   * with the 3 units - the pump, controller and water level. If these
+   * are not what we are expecting then we determine what has failed
+   * and how it has failed (ie type of failure such as locked off etc.)
 
    * @param pumpMessage       a message from a pump
    * @param controllerMessage a message from the pump's controller
@@ -735,7 +754,7 @@ public class MySteamBoilerController implements SteamBoilerController {
     if ((pump != control || pump != this.pumpsState[i] || control != this.pumpsState[i])) { // error
       boolean waterLevelNormal = waterLevelNormal(level);
       
-      if(this.brokenParts[3 + i] >= 10) {
+      if (this.brokenParts[3 + i] >= 10) {
         return 0;
       }
       
@@ -748,14 +767,12 @@ public class MySteamBoilerController implements SteamBoilerController {
         // wrong 2
         // Pump failure
         //this.brokenParts[3 + i] = 4;
-
         return 1;
       } else if (pump == control && control != this.pumpsState[i] && waterLevelNormal) { 
-        // pump and
-        // control wrong
+        // pump and control wrong
         // 3
         // pump failure
-        if(this.brokenParts[3 + i] == 3 || this.brokenParts[3 + i] == 13) {
+        if (this.brokenParts[3 + i] == 3 || this.brokenParts[3 + i] == 13) {
           return 0;
         }
         if (control == true) {
@@ -769,9 +786,7 @@ public class MySteamBoilerController implements SteamBoilerController {
         this.pumpsState[i] = !this.pumpsState[i]; 
         return 1;
       } else if (control != pump && pump == this.pumpsState[i] && !waterLevelNormal) { 
-        // control                                                                          
-        // and
-        // level wrong 4
+        // control and level wrong                                                  
         // pump failure
         if (level > this.expectedRange[1]) { // stuck on
           this.brokenParts[3 + i] = 1;
@@ -783,8 +798,7 @@ public class MySteamBoilerController implements SteamBoilerController {
         return 1;
       } else if (control != this.pumpsState[i] && pump == this.pumpsState[i] 
           && waterLevelNormal) { 
-        // control
-        // wrong 5
+        // control wrong
         // Likely control failure
         // we will check next cycle if it was a controller
         // failure
@@ -794,9 +808,8 @@ public class MySteamBoilerController implements SteamBoilerController {
       } else if (control != this.pumpsState[i] && pump != this.pumpsState[i] 
           && !waterLevelNormal) { 
         // pump, control and level wrong
-        // 6
         // pump failure
-        if(this.expectedRange[0] > level) {
+        if (this.expectedRange[0] > level) {
         
           if (this.brokenParts[3 + i] != 12) {
             this.brokenParts[3 + i] = 2;
@@ -820,8 +833,9 @@ public class MySteamBoilerController implements SteamBoilerController {
    *
    * <p>Firstly if we are checking pumps running at half, do that instead.
    * Caluclate how many pumps we need on by calling calcPumps(). Find out how many
-   * are locked on. If we need more on then turn on non-faulty. Close all pumps we
-   * aren't using
+   * are locked on. If we need more on, then turn on non-faulty. 
+   * If we still don't have enough, turn on faulty pumps
+   * Close all pumps we aren't using
 
    * @param incoming the incoming mailbox
    * @param outgoing the outgoing mailbox
@@ -839,25 +853,13 @@ public class MySteamBoilerController implements SteamBoilerController {
     
     int num = calcPumps(level, steam);
 
-    int on = 0;
-    for (int i = 0; i < this.configuration.getNumberOfPumps(); i++) { // find out how many locked on
-      if (on == num) {
-        break;
-      }
-
-      int pumpStatus = this.brokenParts[3 + i];
-      if (pumpStatus == 1 || pumpStatus == 11) {
-        on++;
-        assert this.pumpsState[i] == true;
-      }
-    }
+    int on = pumpsLockedOn();
+    
     if (on != num) {
       for (int i = 0; i < this.configuration.getNumberOfPumps(); i++) { 
-        // if we need more pumps on,
+        // if we need more pumps on, turn on non-faulty
                                                                         
-        // turn
-        // on non-faulty
-        if (on == num) {
+        if (on == num) { //reached right number so close rest
           outgoing.send(new Message(MessageKind.CLOSE_PUMP_n, i));
           this.pumpsState[i] = false;
           continue;
@@ -867,29 +869,26 @@ public class MySteamBoilerController implements SteamBoilerController {
         if (pumpStatus == 0 || pumpStatus == 4 || pumpStatus == 14) {
           outgoing.send(new Message(MessageKind.OPEN_PUMP_n, i));
           this.pumpsState[i] = true;
-          //pumpsGoingOn[i] = true;
           on++;
         }
       }
       
-      if(on != num) { //if we still aren't at the right num then turn on faulty
+      if (on != num) { //if we still aren't at the right num then turn on faulty
         for (int i = 0; i < this.configuration.getNumberOfPumps(); i++) {
-          if ((this.brokenParts[i + 3] == 3 ||
-              this.brokenParts[i + 3] == 13)) {
+          if ((this.brokenParts[i + 3] == 3 
+              || this.brokenParts[i + 3] == 13)) {
             assert this.brokenParts[i + 3] >= 3;
             outgoing.send(new Message(MessageKind.OPEN_PUMP_n, i));
-            //this.expectedRange[0] -= (this.configuration.getPumpCapacity(0)*4);
-            this.expectedRange[0] = level.getDoubleParameter() - this.configuration.getPumpCapacity(0)-1.3;
+            this.expectedRange[0] = level.getDoubleParameter() 
+                - this.configuration.getPumpCapacity(0) - 1.3;
             this.pumpsState[i] = true;
             on++;
-            if(on == num) {
+            if (on == num) {
               break;
             }
           }
         }
       }
-      
-      
     } else {
       for (int i = 0; i < this.configuration.getNumberOfPumps(); i++) {
         if (this.brokenParts[3 + i] == 0) {
@@ -899,19 +898,19 @@ public class MySteamBoilerController implements SteamBoilerController {
       }
     }
     
-    if(on == num) {
+    if (on == num) {
       turnOffHalf(outgoing);
     }
   }
   
   /**
    * Turn off pumps at half capacity if we aren't using them.
-   * 
+
    * @param outgoing the outgoing mailbox
    */
   private void turnOffHalf(Mailbox outgoing) {
-    for(int i = 0;i < this.configuration.getNumberOfPumps(); i++) {
-      if((this.brokenParts[3 + i] == 3 || this.brokenParts[3 + i] == 13)
+    for (int i = 0; i < this.configuration.getNumberOfPumps(); i++) {
+      if ((this.brokenParts[3 + i] == 3 || this.brokenParts[3 + i] == 13)
           && !outgoing.contains((new Message(MessageKind.OPEN_PUMP_n, i)))) {
         outgoing.send(new Message(MessageKind.CLOSE_PUMP_n, i));
         this.pumpsState[i] = false;
@@ -932,7 +931,7 @@ public class MySteamBoilerController implements SteamBoilerController {
    * @param outgoing the outgoing mailbox
    */
   public void checkPump(Message level, Message steam, Mailbox outgoing) {
-    int turning = -1;
+    int turning = -1; //the pump we are turning on
     for (int i = 1; i < this.pumpsToCheck.length; i++) {
       if (this.pumpsToCheck[i] == 1) {
         this.pumpsState[i - 1] = true;
@@ -1238,10 +1237,8 @@ public class MySteamBoilerController implements SteamBoilerController {
     } else if (level.getDoubleParameter() < this.configuration.getMinimalNormalLevel()) {
       // turnOnPumps(calcPumps(level, steam), outgoing);
       if (this.expectedRange[0] != -1 && this.expectedRange[0] != level.getDoubleParameter()) { 
-        // something
-        // is not
-        // working
-        // trigger degrade mode once done //FIXME
+        //Something is not working but we will detect this once in normal
+        //mode anyway
       }
       initialFill(level, outgoing);
       if (this.valveOpen) {
@@ -1252,7 +1249,7 @@ public class MySteamBoilerController implements SteamBoilerController {
   }
   
   /**
-   * Return whether a number is within 0.3 of a target.
+   * Return whether a number is within 0.32 of a target number.
 
    * @param number the number we are seeing if in range
    * @param target the target
